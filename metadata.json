@@ -1,0 +1,6 @@
+{
+  "name": "국립생태원 생태조사 보고서 자동 검수 시스템",
+  "description": "전국 자연환경조사 9대 전문분야 생태보고서 표준 서식, 학명 체계, 법정보호종, 위치좌표 및 조사방법론 지능형 자동 검수 대국민 서비스",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
