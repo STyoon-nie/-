@@ -127,7 +127,7 @@ ${
             </span>
           </div>
           <h2 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-            대한민국 9대 자연생태계 조사 결과 및 기후에너지환경부 원문 파일을 투명하게 열람하세요
+            전국자연환경조사 관련 자료를 투명하게 열람하세요
           </h2>
           <p className="text-xs sm:text-sm text-slate-200 mt-2 leading-relaxed">
             국립생태원 자동 검수 시스템을 통해 엄격한 표준 서식, K-BML 학명 체계 및 멸종위기종 서식지 안전

@@ -5,26 +5,46 @@ import { SystemHealthBanner } from "./components/SystemHealthBanner";
 import { FieldSelector } from "./components/FieldSelector";
 import { ReportUploader } from "./components/ReportUploader";
 import { InspectionDashboard } from "./components/InspectionDashboard";
-import { AIReviewSection } from "./components/AIReviewSection";
 import { InspectionCertificateModal } from "./components/InspectionCertificateModal";
 import { PublicArchiveView } from "./components/PublicArchiveView";
+import { UserGuideView } from "./components/UserGuideView";
 import { StandardsModal } from "./components/StandardsModal";
 import { TelemetryPanel } from "./components/TelemetryPanel";
 import { ECOLOGICAL_FIELDS } from "./data/fieldsData";
 import { FieldCategory, InspectionReportResult } from "./types";
 import { analyzeEcologicalReport } from "./services/localInspectionEngine";
-import { fetchSystemHealth, requestDeepGeminiReview, SystemHealthResponse } from "./services/apiClient";
+import { fetchSystemHealth, SystemHealthResponse } from "./services/apiClient";
+import { AuditHistoryRecord, INITIAL_AUDIT_HISTORY } from "./data/auditHistory";
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<"inspect" | "public_archive" | "standards">("inspect");
+  const [activeTab, setActiveTab] = useState<"inspect" | "public_archive" | "user_guide" | "standards">("inspect");
   const [selectedField, setSelectedField] = useState<FieldCategory>("flora");
   const [inspectionResult, setInspectionResult] = useState<InspectionReportResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [isAiLoading, setIsAiLoading] = useState(false);
   const [systemHealth, setSystemHealth] = useState<SystemHealthResponse | null>(null);
   const [isCertificateOpen, setIsCertificateOpen] = useState(false);
   const [isStandardsOpen, setIsStandardsOpen] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [auditHistory, setAuditHistory] = useState<AuditHistoryRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem("nie_eco_audit_history");
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch {
+      // ignore
+    }
+    return INITIAL_AUDIT_HISTORY;
+  });
+
+  // Save audit history to local persistence
+  useEffect(() => {
+    try {
+      localStorage.setItem("nie_eco_audit_history", JSON.stringify(auditHistory));
+    } catch {
+      // ignore
+    }
+  }, [auditHistory]);
 
   // 1. Initial Health Check & Initial Sample Loading
   useEffect(() => {
@@ -68,25 +88,67 @@ export default function App() {
     setInspectionResult(localResult);
     setIsAnalyzing(false);
 
-    // 2. Deep AI analysis via Gemini Express endpoint
-    setIsAiLoading(true);
-    try {
-      const aiReview = await requestDeepGeminiReview({
-        fieldName: localResult.fieldName,
-        reportTitle: localResult.reportTitle,
-        reportContent: rawText,
-        detectedIssues: localResult.discrepancies,
-        speciesList: localResult.detectedSpecies,
-      });
-
-      if (aiReview) {
-        setInspectionResult((prev) => (prev ? { ...prev, aiReview } : prev));
-      }
-    } catch (err) {
-      console.warn("AI review completed with fallback", err);
-    } finally {
-      setIsAiLoading(false);
+    // 2. Real-time audit history logging
+    const isMismatch = localResult.fieldCompatibility && !localResult.fieldCompatibility.isMatch;
+    let auditStatus: AuditHistoryRecord["status"] = "검수적합";
+    if (isMismatch) {
+      auditStatus = "분야불일치";
+    } else if (localResult.score.verdict === "PASS") {
+      auditStatus = localResult.coordinateMaskingChecked ? "검수적합" : "좌표마스킹완료";
+    } else if (localResult.score.verdict === "CONDITIONAL_PASS") {
+      auditStatus = "수정권고";
+    } else {
+      auditStatus = "검수반려";
     }
+
+    const newRecord: AuditHistoryRecord = {
+      id: `aud-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      title: title.replace(/\[.*?\]/g, "").trim() || title,
+      field: localResult.fieldName,
+      fieldId: targetField,
+      fileName,
+      status: auditStatus,
+      score: localResult.score.totalScore,
+      time: "방금 전",
+      timestamp: Date.now(),
+      speciesCount: localResult.totalSpeciesCount || localResult.detectedSpecies.length,
+      issueCount: localResult.discrepancies.length,
+      isCustomUploaded: !fileName.includes("샘플"),
+    };
+
+    setAuditHistory((prev) => [newRecord, ...prev.filter((r) => r.title !== newRecord.title).slice(0, 15)]);
+  };
+
+  const handleSelectAuditItem = (item: AuditHistoryRecord) => {
+    setSelectedField(item.fieldId);
+    setActiveTab("inspect");
+
+    const field = ECOLOGICAL_FIELDS.find((f) => f.id === item.fieldId);
+    if (field) {
+      // Find matching preset or default
+      const matchingSample =
+        field.sampleReports.find((s) => s.title.includes(item.title) || item.title.includes(s.title)) ||
+        field.sampleReports[0];
+
+      if (matchingSample) {
+        handleAnalyze(matchingSample.title, matchingSample.content, item.fileName, item.fieldId);
+      }
+    }
+  };
+
+  const handleGoHome = () => {
+    setActiveTab("inspect");
+    setSelectedField("flora");
+    const defaultField = ECOLOGICAL_FIELDS[0];
+    if (defaultField && defaultField.sampleReports[0]) {
+      handleAnalyze(
+        defaultField.sampleReports[0].title,
+        defaultField.sampleReports[0].content,
+        "식물상_표준검수_샘플보고서.hwp",
+        "flora"
+      );
+    }
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleUpdateResultText = (newText: string) => {
@@ -114,6 +176,7 @@ export default function App() {
         onOpenStandardsModal={() => setIsStandardsOpen(true)}
         isOpenMobile={isMobileSidebarOpen}
         onCloseMobile={() => setIsMobileSidebarOpen(false)}
+        onGoHome={handleGoHome}
       />
 
       {/* 2. Main Workspace Layout */}
@@ -125,6 +188,7 @@ export default function App() {
           systemHealth={systemHealth}
           onOpenStandardsModal={() => setIsStandardsOpen(true)}
           onToggleMobileSidebar={() => setIsMobileSidebarOpen(!isMobileSidebarOpen)}
+          onGoHome={handleGoHome}
         />
 
         {/* System HA Status Banner */}
@@ -156,13 +220,15 @@ export default function App() {
                       result={inspectionResult}
                       onOpenCertificate={() => setIsCertificateOpen(true)}
                       onUpdateResultText={handleUpdateResultText}
-                    />
-
-                    {/* Step 4: AI Deep Qualitative Review */}
-                    <AIReviewSection
-                      aiReview={inspectionResult.aiReview || null}
-                      isLoading={isAiLoading}
-                      fieldName={inspectionResult.fieldName}
+                      onSwitchField={(newFieldId: FieldCategory) => {
+                        setSelectedField(newFieldId);
+                        handleAnalyze(
+                          inspectionResult.reportTitle,
+                          inspectionResult.rawText,
+                          inspectionResult.fileInfo.fileName,
+                          newFieldId
+                        );
+                      }}
                     />
                   </>
                 )}
@@ -174,6 +240,8 @@ export default function App() {
                   systemHealth={systemHealth}
                   selectedField={selectedField}
                   onSelectField={handleFieldChange}
+                  auditHistory={auditHistory}
+                  onSelectAuditItem={handleSelectAuditItem}
                 />
               </div>
             </div>
@@ -195,6 +263,19 @@ export default function App() {
                     );
                   }
                 }}
+              />
+            </div>
+          )}
+
+          {activeTab === "user_guide" && (
+            <div className="max-w-7xl mx-auto">
+              <UserGuideView
+                onStartInspection={(fieldId) => {
+                  if (fieldId) setSelectedField(fieldId);
+                  setActiveTab("inspect");
+                }}
+                onOpenStandardsModal={() => setIsStandardsOpen(true)}
+                onOpenPublicArchive={() => setActiveTab("public_archive")}
               />
             </div>
           )}

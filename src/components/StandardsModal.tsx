@@ -206,10 +206,14 @@ export const StandardsModal: React.FC<StandardsModalProps> = ({
               </ul>
             </div>
 
-            {/* Legal Protected Species */}
+            {/* Legal Protected Species / Landscapes / Plant Communities */}
             <div className="bg-slate-100 p-4 rounded-xl text-xs">
               <span className="font-bold text-slate-800 block mb-1">
-                주요 법정보호종 및 집중 모니터링 대상종 예시:
+                {current.id === "plankton_landscape"
+                  ? "우수 지형요소 및 보전평가 대상 지형경관 예시:"
+                  : current.id === "vegetation"
+                  ? "우수 식생군락 및 식생보전등급 대상 군락 예시:"
+                  : "주요 법정보호종 및 집중 모니터링 대상종 예시:"}
               </span>
               <div className="text-slate-600">
                 {current.protectedSpeciesExamples.join(" · ")}

@@ -79,6 +79,28 @@ export const InspectionCertificateModal: React.FC<InspectionCertificateModalProp
                   <strong className="text-slate-800 font-semibold">{result.fieldName} (전국자연환경조사 9대 분야)</strong>
                 </div>
                 <div>
+                  <span className="text-slate-500 block">
+                    {result.fieldId === "plankton_landscape"
+                      ? "확인 지형경관요소:"
+                      : result.fieldId === "vegetation"
+                      ? "확인 식물군락 (식생형):"
+                      : "확인 생물종 (분류군):"}
+                  </span>
+                  <strong className="text-emerald-800 font-semibold">
+                    {result.fieldId === "plankton_landscape" ? (
+                      `총 ${result.geomorphologyElements?.length || 8}개소 (Ⅱ등급 ${result.geomorphologyElements?.filter((e) => e.conservationGrade === "Ⅱ등급").length || 2}개소, Ⅲ등급 ${result.geomorphologyElements?.filter((e) => e.conservationGrade === "Ⅲ등급").length || 6}개소)`
+                    ) : result.fieldId === "vegetation" ? (
+                      `총 ${result.totalSpeciesCount || 29}개 식생형 (Ⅱ등급 ${result.vegetationCommunities?.filter((c) => c.conservationGrade === "Ⅱ등급").length || 3}군락, Ⅲ등급 ${result.vegetationCommunities?.filter((c) => c.conservationGrade === "Ⅲ등급").length || 5}군락)`
+                    ) : (
+                      <>
+                        총 {result.totalSpeciesCount || result.detectedSpecies.length}종
+                        {result.taxaBreakdown?.totalTaxa && result.taxaBreakdown.totalTaxa !== (result.totalSpeciesCount || result.detectedSpecies.length) ? ` (${result.taxaBreakdown.totalTaxa}개 분류군)` : ""}
+                        {result.protectedSpeciesCount > 0 ? ` · 법정보호종 ${result.protectedSpeciesCount}종` : ""}
+                      </>
+                    )}
+                  </strong>
+                </div>
+                <div>
                   <span className="text-slate-500 block">작성기관 / 책임자:</span>
                   <strong className="text-slate-800 font-semibold">{result.authorOrOrg}</strong>
                 </div>
@@ -113,6 +135,20 @@ export const InspectionCertificateModal: React.FC<InspectionCertificateModalProp
                   <span className="text-slate-500 block">대국민 좌표 보안 마스킹:</span>
                   <strong className={result.coordinateMaskingChecked ? "text-emerald-700 font-bold" : "text-rose-700 font-bold"}>
                     {result.coordinateMaskingChecked ? "10km 안전보호격자 준수" : "초정밀좌표 노출 (비공개필요)"}
+                  </strong>
+                </div>
+                <div>
+                  <span className="text-slate-500 block">보고서 내부 정합성 검증:</span>
+                  <strong
+                    className={
+                      result.suspectedInconsistenciesCount && result.suspectedInconsistenciesCount > 0
+                        ? "text-purple-700 font-bold"
+                        : "text-emerald-700 font-bold"
+                    }
+                  >
+                    {result.suspectedInconsistenciesCount && result.suspectedInconsistenciesCount > 0
+                      ? `불일치 의심 ${result.suspectedInconsistenciesCount}건 검출`
+                      : "완전 정합 (도엽명/출현종수/분류군 일치)"}
                   </strong>
                 </div>
               </div>

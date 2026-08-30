@@ -10,6 +10,11 @@ import {
   Play,
   RotateCcw,
   Info,
+  CheckCircle2,
+  Trash2,
+  FileCheck,
+  Search,
+  Loader2,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import { ECOLOGICAL_FIELDS } from "../data/fieldsData";
@@ -22,6 +27,16 @@ interface ReportUploaderProps {
   isAnalyzing: boolean;
 }
 
+interface StagedFile {
+  name: string;
+  sizeFormatted: string;
+  text: string;
+  title: string;
+  charCount: number;
+  lineCount: number;
+  extension: string;
+}
+
 export const ReportUploader: React.FC<ReportUploaderProps> = ({
   selectedField,
   onAnalyze,
@@ -31,60 +46,79 @@ export const ReportUploader: React.FC<ReportUploaderProps> = ({
   const [pastedTitle, setPastedTitle] = useState("");
   const [pastedText, setPastedText] = useState("");
   const [dragActive, setDragActive] = useState(false);
-  const [uploadedFileName, setUploadedFileName] = useState("");
+  const [stagedFile, setStagedFile] = useState<StagedFile | null>(null);
   const [isExtractingFile, setIsExtractingFile] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const currentField =
     ECOLOGICAL_FIELDS.find((f) => f.id === selectedField) || ECOLOGICAL_FIELDS[0];
 
+  // Format file size
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
   // Handle preset selection
   const handleLoadSample = (sample: { title: string; content: string }) => {
     setPastedTitle(sample.title);
     setPastedText(sample.content);
-    setUploadedFileName(`${currentField.name}_표준점검용_샘플.hwp`);
     onAnalyze(sample.title, sample.content, `${currentField.name}_샘플보고서.hwp`);
   };
 
-  // Handle real file upload
+  // Handle real file upload (prepares the file without auto-submitting)
   const handleFileUpload = async (file: File) => {
-    setUploadedFileName(file.name);
     const fileName = file.name;
-    const titleFromName = file.name.replace(/\.[^/.]+$/, "");
-    setPastedTitle(titleFromName);
+    const extension = fileName.split(".").pop()?.toLowerCase() || "";
+    const titleFromName = fileName.replace(/\.[^/.]+$/, "");
     setIsExtractingFile(true);
 
     try {
-      if (fileName.toLowerCase().endsWith(".pdf")) {
-        const text = await extractTextFromPDF(file);
-        setPastedText(text);
-        onAnalyze(titleFromName, text, fileName);
-      } else if (fileName.endsWith(".xlsx") || fileName.endsWith(".xls") || fileName.endsWith(".csv")) {
+      let extractedText = "";
+
+      if (extension === "pdf") {
+        extractedText = await extractTextFromPDF(file);
+      } else if (["xlsx", "xls", "csv"].includes(extension)) {
         const buffer = await file.arrayBuffer();
         const workbook = XLSX.read(buffer, { type: "array" });
-        let extractedText = `[엑셀 시트 데이터 추출: ${fileName}]\n\n`;
+        extractedText = `[엑셀 시트 데이터 추출: ${fileName}]\n\n`;
         workbook.SheetNames.forEach((sheetName) => {
           const sheet = workbook.Sheets[sheetName];
           extractedText += `=== 시트명: ${sheetName} ===\n`;
           extractedText += XLSX.utils.sheet_to_csv(sheet) + "\n\n";
         });
-        setPastedText(extractedText);
-        onAnalyze(titleFromName, extractedText, fileName);
       } else {
         // Text / Markdown / HWP text extraction
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const text = (e.target?.result as string) || "";
-          setPastedText(text);
-          onAnalyze(titleFromName, text, fileName);
-        };
-        reader.readAsText(file, "UTF-8");
+        extractedText = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve((e.target?.result as string) || "");
+          reader.onerror = (e) => reject(e);
+          reader.readAsText(file, "UTF-8");
+        });
       }
+
+      const lines = extractedText.split("\n").filter((l) => l.trim().length > 0);
+
+      setStagedFile({
+        name: fileName,
+        sizeFormatted: formatFileSize(file.size),
+        text: extractedText,
+        title: titleFromName,
+        charCount: extractedText.length,
+        lineCount: lines.length,
+        extension,
+      });
     } catch (e) {
       console.error("File parse error:", e);
     } finally {
       setIsExtractingFile(false);
     }
+  };
+
+  const handleStartInspection = () => {
+    if (!stagedFile) return;
+    onAnalyze(stagedFile.title || stagedFile.name, stagedFile.text, stagedFile.name);
   };
 
   const handleDrag = (e: React.DragEvent) => {
@@ -132,13 +166,16 @@ export const ReportUploader: React.FC<ReportUploaderProps> = ({
           </button>
           <button
             onClick={() => setActiveMode("file")}
-            className={`px-3 py-1.5 rounded-lg transition ${
+            className={`px-3 py-1.5 rounded-lg transition relative ${
               activeMode === "file"
                 ? "bg-white text-emerald-800 shadow-xs font-bold"
                 : "hover:text-slate-900"
             }`}
           >
-            파일 업로드 (HWP/PDF/XLSX)
+            <span>파일 업로드 (HWP/PDF/XLSX)</span>
+            {stagedFile && (
+              <span className="ml-1.5 w-2 h-2 rounded-full bg-emerald-500 inline-block align-middle" />
+            )}
           </button>
           <button
             onClick={() => setActiveMode("text")}
@@ -156,12 +193,12 @@ export const ReportUploader: React.FC<ReportUploaderProps> = ({
       {/* 1. PRESET MODE (Recommended for quick testing of 9 fields) */}
       {activeMode === "preset" && (
         <div className="mt-4 space-y-3">
-          <div className="bg-emerald-50/60 p-3 rounded-xl border border-emerald-100 text-xs text-emerald-900 flex items-start space-x-2">
+          <div className="bg-emerald-50/70 p-3.5 rounded-xl border border-emerald-200 text-xs text-emerald-950 flex items-start space-x-2.5 shadow-xs">
             <Info className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
             <div className="leading-relaxed">
-              <strong>{currentField.name} 분야 전용 검수 프리셋:</strong> 아래 준비된 실제
-              오류 사례 보고서 또는 표준 적합 보고서를 선택하면, 즉시 결함 분석 및 AI 정밀 검수가
-              시작됩니다.
+              <strong className="text-emerald-900">{currentField.name} 분야 전용 검수 프리셋:</strong> 아래 준비된 실제
+              오류 사례 보고서 또는 표준 적합 보고서를 선택하면, 즉시 <strong>분야 적합성 교차검증</strong>, 결함 분석 및 AI 정밀 검수가
+              시작됩니다. (타 분야 문서가 첨부될 경우 시스템이 자동 감지하여 전환을 안내합니다.)
             </div>
           </div>
 
@@ -209,7 +246,7 @@ export const ReportUploader: React.FC<ReportUploaderProps> = ({
                 <button
                   onClick={() => handleLoadSample(sample)}
                   disabled={isAnalyzing}
-                  className={`mt-4 w-full py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center space-x-1.5 transition ${
+                  className={`mt-4 w-full py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center space-x-1.5 transition cursor-pointer ${
                     sample.hasErrors
                       ? "bg-amber-600 hover:bg-amber-700 text-white shadow-xs"
                       : "bg-emerald-700 hover:bg-emerald-800 text-white shadow-xs"
@@ -226,47 +263,149 @@ export const ReportUploader: React.FC<ReportUploaderProps> = ({
 
       {/* 2. FILE UPLOAD MODE */}
       {activeMode === "file" && (
-        <div className="mt-4">
-          <div
-            onDragEnter={handleDrag}
-            onDragLeave={handleDrag}
-            onDragOver={handleDrag}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-            className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all ${
-              dragActive
-                ? "border-emerald-500 bg-emerald-50/50"
-                : "border-slate-300 hover:border-emerald-400 bg-slate-50/50"
-            }`}
-          >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".hwp,.hwpx,.pdf,.doc,.docx,.xlsx,.xls,.csv,.txt,.md"
-              onChange={(e) => {
-                if (e.target.files && e.target.files[0]) {
-                  handleFileUpload(e.target.files[0]);
-                }
-              }}
-              className="hidden"
-            />
-            <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto mb-3">
-              <UploadCloud className="w-6 h-6" />
-            </div>
-            <h4 className="text-sm font-bold text-slate-800">
-              보고서 파일을 드래그하여 올리거나 클릭하여 선택하세요
-            </h4>
-            <p className="text-xs text-slate-500 mt-1">
-              지원 형식: HWP, HWPX, PDF, DOCX, XLSX(생물종/야장 데이터), TXT, Markdown (최대 50MB)
-            </p>
+        <div className="mt-4 space-y-4">
+          {/* File Staging / Ready Preview Card */}
+          {stagedFile ? (
+            <div className="rounded-2xl border-2 border-emerald-300 bg-gradient-to-br from-emerald-50/80 to-slate-50 p-5 space-y-4 shadow-sm animate-in fade-in duration-200">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start space-x-3.5 min-w-0">
+                  <div className="w-12 h-12 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                    {["xlsx", "xls", "csv"].includes(stagedFile.extension) ? (
+                      <FileSpreadsheet className="w-6 h-6" />
+                    ) : stagedFile.extension === "pdf" ? (
+                      <FileText className="w-6 h-6" />
+                    ) : (
+                      <FileCode className="w-6 h-6" />
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center space-x-2">
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-200/80 text-emerald-900 uppercase font-mono">
+                        {stagedFile.extension || "FILE"}
+                      </span>
+                      <span className="text-xs text-slate-500 font-medium">
+                        {stagedFile.sizeFormatted}
+                      </span>
+                      <span className="text-xs text-emerald-700 font-medium flex items-center space-x-0.5">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>파일 텍스트 추출 완료 ({stagedFile.charCount.toLocaleString()}자 / {stagedFile.lineCount.toLocaleString()}행)</span>
+                      </span>
+                    </div>
+                    <h4 className="text-sm font-black text-slate-900 truncate mt-1">
+                      {stagedFile.name}
+                    </h4>
+                  </div>
+                </div>
 
-            {uploadedFileName && (
-              <div className="mt-4 inline-flex items-center space-x-2 px-3 py-1.5 bg-emerald-100/80 text-emerald-900 rounded-lg text-xs font-semibold">
-                <FileText className="w-4 h-4 text-emerald-700" />
-                <span>업로드 완료: {uploadedFileName}</span>
+                <button
+                  onClick={() => {
+                    setStagedFile(null);
+                    if (fileInputRef.current) fileInputRef.current.value = "";
+                  }}
+                  className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                  title="파일 취소 및 다른 파일 선택"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
               </div>
-            )}
-          </div>
+
+              {/* Title input customization */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
+                  <span>검수 보고서 제목 (필요 시 수정 가능)</span>
+                  <span className="text-[11px] font-normal text-slate-500">현재 분야: [{currentField.name}]</span>
+                </label>
+                <input
+                  type="text"
+                  value={stagedFile.title}
+                  onChange={(e) => setStagedFile({ ...stagedFile, title: e.target.value })}
+                  className="w-full px-3.5 py-2 text-xs rounded-xl border border-slate-300 bg-white font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs"
+                  placeholder="보고서 제목을 입력하세요"
+                />
+              </div>
+
+              {/* Extracted snippet preview */}
+              <div className="p-3 bg-white rounded-xl border border-slate-200 text-[11px] font-mono text-slate-600 max-h-24 overflow-y-auto leading-relaxed whitespace-pre-wrap">
+                {stagedFile.text.slice(0, 300)}...
+              </div>
+
+              {/* Explicit Start Inspection Button */}
+              <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-1">
+                <button
+                  onClick={handleStartInspection}
+                  disabled={isAnalyzing}
+                  className="w-full sm:flex-1 py-3 px-5 rounded-xl bg-emerald-700 hover:bg-emerald-800 active:scale-[0.99] text-white font-black text-xs sm:text-sm flex items-center justify-center space-x-2 shadow-md transition cursor-pointer disabled:opacity-50"
+                >
+                  {isAnalyzing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-emerald-200" />
+                      <span>국립생태원 표준 검수 실행 중...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Search className="w-4 h-4 text-emerald-200" />
+                      <span>[{currentField.name}] 표준 검수 시작하기</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isAnalyzing}
+                  className="w-full sm:w-auto py-3 px-4 rounded-xl border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-bold text-xs flex items-center justify-center space-x-1.5 transition cursor-pointer"
+                >
+                  <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                  <span>다른 파일 선택</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* Upload drop zone when no file is staged */
+            <div
+              onDragEnter={handleDrag}
+              onDragLeave={handleDrag}
+              onDragOver={handleDrag}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all ${
+                dragActive
+                  ? "border-emerald-500 bg-emerald-50/50"
+                  : "border-slate-300 hover:border-emerald-400 bg-slate-50/50"
+              }`}
+            >
+              <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto mb-3">
+                {isExtractingFile ? (
+                  <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
+                ) : (
+                  <UploadCloud className="w-6 h-6" />
+                )}
+              </div>
+              <h4 className="text-sm font-bold text-slate-800">
+                {isExtractingFile
+                  ? "파일 내용을 파싱 및 추출하는 중입니다..."
+                  : "보고서 파일을 드래그하여 올리거나 클릭하여 선택하세요"}
+              </h4>
+              <p className="text-xs text-slate-500 mt-1">
+                지원 형식: HWP, HWPX, PDF, DOCX, XLSX(생물종/야장 데이터), TXT, Markdown (최대 50MB)
+              </p>
+              <div className="mt-3 inline-flex items-center space-x-1 text-[11px] text-emerald-800 font-semibold bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200">
+                <Info className="w-3.5 h-3.5 text-emerald-600" />
+                <span>파일 업로드 후 [검수 시작하기] 버튼을 눌러 검수를 진행합니다.</span>
+              </div>
+            </div>
+          )}
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".hwp,.hwpx,.pdf,.doc,.docx,.xlsx,.xls,.csv,.txt,.md"
+            onChange={(e) => {
+              if (e.target.files && e.target.files[0]) {
+                handleFileUpload(e.target.files[0]);
+              }
+            }}
+            className="hidden"
+          />
         </div>
       )}
 
@@ -310,7 +449,7 @@ export const ReportUploader: React.FC<ReportUploaderProps> = ({
               }
             }}
             disabled={!pastedText.trim() || isAnalyzing}
-            className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 shadow-xs disabled:opacity-50"
+            className="w-full py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 shadow-xs disabled:opacity-50 cursor-pointer"
           >
             <Sparkles className="w-4 h-4 text-emerald-200" />
             <span>{isAnalyzing ? "지능형 검수 진행 중..." : "입력 내용 실시간 검수 실행"}</span>

@@ -17,20 +17,24 @@ import {
   Server,
   ChevronRight,
   X,
+  Home,
+  HelpCircle,
+  FileText,
 } from "lucide-react";
 import { ECOLOGICAL_FIELDS } from "../data/fieldsData";
 import { FieldCategory } from "../types";
 import { SystemHealthResponse } from "../services/apiClient";
 
 interface SidebarProps {
-  activeTab: "inspect" | "public_archive" | "standards";
-  setActiveTab: (tab: "inspect" | "public_archive" | "standards") => void;
+  activeTab: "inspect" | "public_archive" | "user_guide" | "standards";
+  setActiveTab: (tab: "inspect" | "public_archive" | "user_guide" | "standards") => void;
   selectedField: FieldCategory;
   onSelectField: (fieldId: FieldCategory) => void;
   systemHealth: SystemHealthResponse | null;
   onOpenStandardsModal: () => void;
   isOpenMobile: boolean;
   onCloseMobile: () => void;
+  onGoHome?: () => void;
 }
 
 const FIELD_ICONS: Record<string, React.ElementType> = {
@@ -54,6 +58,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenStandardsModal,
   isOpenMobile,
   onCloseMobile,
+  onGoHome,
 }) => {
   return (
     <>
@@ -75,16 +80,26 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="flex flex-col flex-1 overflow-y-auto">
           {/* Header */}
           <div className="p-4 border-b border-slate-700/60 flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="w-9 h-9 rounded-lg bg-emerald-500 flex items-center justify-center text-[#1a2b3c] font-black shadow-md">
+            <div
+              onClick={() => {
+                if (onGoHome) onGoHome();
+                onCloseMobile();
+              }}
+              className="flex items-center space-x-3 cursor-pointer group"
+              title="전국자연환경조사 최종보고서 검수시스템 홈으로 이동"
+            >
+              <div className="w-9 h-9 rounded-lg bg-emerald-500 group-hover:bg-emerald-400 transition flex items-center justify-center text-[#1a2b3c] font-black shadow-md shrink-0">
                 <ShieldCheck className="w-5 h-5 text-[#1a2b3c]" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <div className="text-[10px] uppercase tracking-wider text-emerald-400 font-bold">
                   국립생태원 NIE
                 </div>
-                <div className="text-sm font-bold tracking-tight text-white leading-tight">
-                  보고서 검수 시스템
+                <div className="text-xs font-bold tracking-tight text-white leading-tight truncate group-hover:text-emerald-300 transition">
+                  전국자연환경조사
+                </div>
+                <div className="text-[11px] font-medium text-slate-300 leading-tight">
+                  최종보고서 검수시스템
                 </div>
               </div>
             </div>
@@ -102,12 +117,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider px-3 mb-2">
               서비스 모드
             </div>
+
+            {/* Home Quick Button */}
+            {onGoHome && (
+              <button
+                onClick={() => {
+                  onGoHome();
+                  onCloseMobile();
+                }}
+                className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition-all cursor-pointer"
+              >
+                <div className="flex items-center space-x-2.5">
+                  <Home className="w-4 h-4 text-emerald-400" />
+                  <span>홈 (처음 화면으로)</span>
+                </div>
+              </button>
+            )}
+
             <button
               onClick={() => {
                 setActiveTab("inspect");
                 onCloseMobile();
               }}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold transition-all ${
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === "inspect"
                   ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold shadow-xs"
                   : "text-slate-300 hover:bg-slate-800 hover:text-white"
@@ -127,7 +159,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 setActiveTab("public_archive");
                 onCloseMobile();
               }}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold transition-all ${
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                 activeTab === "public_archive"
                   ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold shadow-xs"
                   : "text-slate-300 hover:bg-slate-800 hover:text-white"
@@ -144,24 +176,44 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             <button
               onClick={() => {
+                setActiveTab("user_guide");
+                onCloseMobile();
+              }}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === "user_guide"
+                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold shadow-xs"
+                  : "text-slate-300 hover:bg-slate-800 hover:text-white"
+              }`}
+            >
+              <div className="flex items-center space-x-2.5">
+                <HelpCircle className="w-4 h-4 text-emerald-400" />
+                <span>검수시스템 사용 설명서</span>
+              </div>
+              {activeTab === "user_guide" && (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              )}
+            </button>
+
+            <button
+              onClick={() => {
                 onOpenStandardsModal();
                 onCloseMobile();
               }}
-              className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition-all"
+              className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold text-slate-300 hover:bg-slate-800 hover:text-white transition-all cursor-pointer"
             >
               <div className="flex items-center space-x-2.5">
                 <BookOpen className="w-4 h-4 text-emerald-400" />
-                <span>9대 분야 표준지침</span>
+                <span>9개 분야 표준지침</span>
               </div>
               <ChevronRight className="w-3.5 h-3.5 text-slate-500" />
             </button>
           </div>
 
-          {/* 9 Ecological Fields Fast Switcher */}
+          {/* Ecological Fields Fast Switcher */}
           <div className="px-3 py-2 border-t border-slate-700/60 flex-1">
             <div className="flex items-center justify-between px-3 mb-2">
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                9대 전문분야
+                분야명
               </span>
               <span className="text-[10px] bg-slate-800 text-slate-300 font-mono px-1.5 py-0.5 rounded">
                 9 Fields

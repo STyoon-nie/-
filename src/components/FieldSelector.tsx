@@ -42,7 +42,7 @@ export const FieldSelector: React.FC<FieldSelectorProps> = ({
         <div>
           <div className="flex items-center space-x-2">
             <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 text-xs font-bold">
-              전국자연환경조사 9대 전문분야
+              전국자연환경조사
             </span>
             <span className="text-xs text-slate-500 font-medium">
               국립생태원 표준 서식 검수 규격
@@ -113,7 +113,11 @@ export const FieldSelector: React.FC<FieldSelectorProps> = ({
 
               <div className="mt-3 pt-2.5 border-t border-slate-100/80 flex items-center justify-between text-[11px] text-slate-500">
                 <span className="truncate max-w-[170px]">
-                  주요 보호종: {f.protectedSpeciesExamples[0]}
+                  {f.id === "plankton_landscape"
+                    ? `우수 지형요소: ${f.protectedSpeciesExamples[0]}`
+                    : f.id === "vegetation"
+                    ? `우수 식생군락: ${f.protectedSpeciesExamples[0]}`
+                    : `주요 보호종: ${f.protectedSpeciesExamples[0]}`}
                 </span>
                 <span className="text-emerald-700 font-medium">
                   {f.surveySeasons.length}개 조사시기
