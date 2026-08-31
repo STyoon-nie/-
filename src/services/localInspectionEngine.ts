@@ -1569,6 +1569,14 @@ export function analyzeEcologicalReport(
   );
   discrepancies.push(...internalInconsistencies);
 
+  // [EcoCheck] 분야별 내부 정합성 검수(종수 정합성·목/과별 합계·완성도·표기)를
+  // '점수 계산 전에' 추가하여, 검출된 지적사항이 점수·판정·정합성 상태에 반영되게 한다.
+  {
+    const ym = normalizedText.match(/202[0-9]년?/);
+    const sy = ym ? (ym[0].includes("년") ? ym[0] : `${ym[0]}년`) : "2024년";
+    discrepancies.push(...runFieldConsistencyChecks(normalizedText, fieldId, sy));
+  }
+
   const suspectedInconsistenciesCount = discrepancies.filter((d) => d.isSuspectedInconsistency).length;
   const hasCriticalInconsistency = discrepancies.some(
     (d) => d.isSuspectedInconsistency && d.severity === "CRITICAL"
@@ -1581,8 +1589,13 @@ export function analyzeEcologicalReport(
       : "VERIFIED";
 
   // 6. Calculate Standard 100-Point Quality Score & Breakdown
-  let structureScore = Math.max(0, 20 - missingSections * 5);
-  let taxonomyScore = Math.max(0, 20 - taxonomyErrors * 4);
+  //   ([EcoCheck] 우리 품질 검사도 점수에 반영: 편집 잔존 문구/표·그림 번호 → 체제,
+  //    학명 종소명 표기 → 학명·분류체계. 앱 자체 카운터와 중복되지 않도록 id 접두사로 식별)
+  const ecoResidualCount = discrepancies.filter((d) => d.id.startsWith("ins-resid")).length;
+  const ecoFigureCount = discrepancies.filter((d) => d.id.startsWith("ins-fig")).length;
+  const ecoScinameCount = discrepancies.filter((d) => d.id.startsWith("ins-sciname")).length;
+  let structureScore = Math.max(0, 20 - missingSections * 5 - ecoResidualCount * 3 - ecoFigureCount * 1);
+  let taxonomyScore = Math.max(0, 20 - taxonomyErrors * 4 - ecoScinameCount * 2);
   let methodologyScore = Math.max(
     0,
     20 - discrepancies.filter((d) => d.category === "METHODOLOGY").length * 5
@@ -1653,12 +1666,7 @@ export function analyzeEcologicalReport(
   const yearMatch = normalizedText.match(/202[0-9]년?/);
   if (yearMatch) surveyYear = yearMatch[0].includes("년") ? yearMatch[0] : `${yearMatch[0]}년`;
 
-  // [EcoCheck] 분야별 내부 정합성 검수(디스패처가 분야에 따라 규칙 적용):
-  //  - 공통: 종수 조사범위(금번/선행/종합) 판정 → 종합수치 오탐 방지 + 종수 내부 모순,
-  //    편집 잔존 문구, 표·그림 번호, 학명 표기
-  //  - 육상곤충: 목(Order)별 과·종수 합계 검증
-  //  - 담수어류: 과(Family)별 종수 합계 검증
-  discrepancies.push(...runFieldConsistencyChecks(normalizedText, fieldId, surveyYear));
+  // (분야별 내부 정합성 검수는 점수 계산 전(위쪽)에서 이미 수행함)
 
   // Extract Geomorphology and Vegetation domain specific records
   let geomorphologyElements: GeomorphologyElementRecord[] | undefined;
