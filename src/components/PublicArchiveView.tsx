@@ -244,6 +244,86 @@ ${
             </div>
             <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-amber-700 transition shrink-0" />
           </a>
+
+          <a
+            href="https://species.nibr.go.kr/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-3 bg-white hover:bg-teal-50/60 border border-slate-200 hover:border-teal-300 rounded-xl transition flex items-center justify-between group shadow-2xs"
+          >
+            <div className="flex items-center space-x-2.5">
+              <div className="w-7 h-7 rounded-lg bg-teal-100 flex items-center justify-center text-teal-800 shrink-0">
+                <BookOpen className="w-4 h-4" />
+              </div>
+              <div>
+                <strong className="block text-slate-900 font-bold text-xs group-hover:text-teal-800">
+                  국립생물자원관 한반도의 생물다양성
+                </strong>
+                <span className="text-[10px] text-slate-500 block">국가생물종목록·학명 표준 조회</span>
+              </div>
+            </div>
+            <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-teal-700 transition shrink-0" />
+          </a>
+
+          <a
+            href="https://www.nature.go.kr/kpni/index.do"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-3 bg-white hover:bg-lime-50/60 border border-slate-200 hover:border-lime-300 rounded-xl transition flex items-center justify-between group shadow-2xs"
+          >
+            <div className="flex items-center space-x-2.5">
+              <div className="w-7 h-7 rounded-lg bg-lime-100 flex items-center justify-center text-lime-800 shrink-0">
+                <FileText className="w-4 h-4" />
+              </div>
+              <div>
+                <strong className="block text-slate-900 font-bold text-xs group-hover:text-lime-800">
+                  국립수목원 국가표준식물목록
+                </strong>
+                <span className="text-[10px] text-slate-500 block">식물 국명·학명 표준(KPNI)</span>
+              </div>
+            </div>
+            <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-lime-700 transition shrink-0" />
+          </a>
+
+          <a
+            href="https://map.ngii.go.kr/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-3 bg-white hover:bg-sky-50/60 border border-slate-200 hover:border-sky-300 rounded-xl transition flex items-center justify-between group shadow-2xs"
+          >
+            <div className="flex items-center space-x-2.5">
+              <div className="w-7 h-7 rounded-lg bg-sky-100 flex items-center justify-center text-sky-800 shrink-0">
+                <MapPin className="w-4 h-4" />
+              </div>
+              <div>
+                <strong className="block text-slate-900 font-bold text-xs group-hover:text-sky-800">
+                  국토지리정보원 국토정보플랫폼
+                </strong>
+                <span className="text-[10px] text-slate-500 block">1:25,000 도엽·수치지형도</span>
+              </div>
+            </div>
+            <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-sky-700 transition shrink-0" />
+          </a>
+
+          <a
+            href="https://www.nie.re.kr/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-3 bg-white hover:bg-violet-50/60 border border-slate-200 hover:border-violet-300 rounded-xl transition flex items-center justify-between group shadow-2xs"
+          >
+            <div className="flex items-center space-x-2.5">
+              <div className="w-7 h-7 rounded-lg bg-violet-100 flex items-center justify-center text-violet-800 shrink-0">
+                <Building2 className="w-4 h-4" />
+              </div>
+              <div>
+                <strong className="block text-slate-900 font-bold text-xs group-hover:text-violet-800">
+                  국립생태원 (NIE)
+                </strong>
+                <span className="text-[10px] text-slate-500 block">전국자연환경조사 수행·지침</span>
+              </div>
+            </div>
+            <ExternalLink className="w-3.5 h-3.5 text-slate-400 group-hover:text-violet-700 transition shrink-0" />
+          </a>
         </div>
       </div>
 
