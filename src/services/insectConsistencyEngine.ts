@@ -510,22 +510,43 @@ export function runFieldConsistencyChecks(
     if (!body || body.length < 20) return [];
     const baseYear = surveyYear || "";
 
-    // 모든 분야 공통: 종수 조사범위(금번/선행/종합) 판정 + 완성도/표기 품질
-    const common: DiscrepancyItem[] = [
-      ...checkSpeciesCountConsistency(body, baseYear),
+    // 완성도·표기 품질 검사(편집 잔존 문구 / 표·그림 번호 / 학명 표기)
+    const quality: DiscrepancyItem[] = [
       ...checkResidualKeywords(body),
       ...checkFigureTableNumbers(body),
       ...checkScientificNameFormat(body),
     ];
+    // 종수 조사범위(금번/선행/종합) 정합성 + 품질
+    const speciesAndQuality: DiscrepancyItem[] = [
+      ...checkSpeciesCountConsistency(body, baseYear),
+      ...quality,
+    ];
 
+    // 목→과→종 (곤충)
     if (fieldId === "insects") {
-      return [...checkOrderArithmetic(body), ...common];
+      return [...checkOrderArithmetic(body), ...speciesAndQuality];
     }
+    // 과→종 (담수어류)
     if (fieldId === "fish") {
-      return [...checkFamilyArithmetic(body), ...common];
+      return [...checkFamilyArithmetic(body), ...speciesAndQuality];
     }
-    if (fieldId === "birds") {
-      return [...checkGroupSpeciesArithmetic(body), ...common];
+    // 목/과→종 (조류·포유류·양서파충류·저서성대형무척추동물)
+    if (
+      fieldId === "birds" ||
+      fieldId === "mammals" ||
+      fieldId === "herpetofauna" ||
+      fieldId === "benthos"
+    ) {
+      return [...checkGroupSpeciesArithmetic(body), ...speciesAndQuality];
+    }
+    // 식물상: 과-속-종 및 종수 정합성은 앱의 기존 엔진(detectInternalInconsistencies)이
+    // 이미 담당하므로 중복을 피하고, 완성도·표기 품질만 보강한다.
+    if (fieldId === "flora" || fieldId === "vegetation") {
+      return quality;
+    }
+    // 지형: 종/학명 단위가 아니므로 잔존 문구·표·그림 번호만 점검
+    if (fieldId === "plankton_landscape") {
+      return [...checkResidualKeywords(body), ...checkFigureTableNumbers(body)];
     }
     return [];
   } catch (e) {
