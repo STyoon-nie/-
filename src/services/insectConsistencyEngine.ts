@@ -438,6 +438,66 @@ function checkFamilyArithmetic(body: string): DiscrepancyItem[] {
 }
 
 // ---------------------------------------------------------------------------
+// 검사 7: 그룹(목/과)별 종수 → 총 종수 합계 검증 — 조류 등
+//   (예: "참새목 45종, 도요목 12종 … 총 85종")
+// ---------------------------------------------------------------------------
+// '목/과'로 끝나지만 분류군이 아닌 단어 제외(항목·결과·수목·학과 등).
+const GROUP_BLOCKLIST = new Set([
+  "항목", "종목", "과목", "제목", "품목", "조목", "명목", "세목", "두목", "안목", "면목",
+  "주목", "이목", "반목", "지목", "각목", "골목", "초목", "수목", "재목", "괄목", "맹목",
+  "강목", "절목", "비목",
+  "결과", "성과", "경과", "통과", "효과", "학과", "전과", "내과", "외과", "치과", "안과",
+  "예과", "본과", "분과", "교과", "대과", "소과", "조사과", "연구과", "기획과", "총무과",
+  "관리과", "보전과", "분류과",
+]);
+
+function parseGroups(body: string): Record<string, { species: number; evidence: string }> {
+  const re = /([가-힣]{1,10}(?:목|과))\s*([0-9][0-9,]*)\s*종/g;
+  const found: Record<string, { species: number; evidence: string }> = {};
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body))) {
+    const g = m[1];
+    if (GROUP_BLOCKLIST.has(g)) continue;
+    const sp = toInt(m[2]);
+    if (sp == null) continue;
+    if (!(g in found)) found[g] = { species: sp, evidence: snippet(body, m.index, m.index + m[0].length) };
+  }
+  return found;
+}
+
+function checkGroupSpeciesArithmetic(body: string): DiscrepancyItem[] {
+  const out: DiscrepancyItem[] = [];
+  const groups = parseGroups(body);
+  const keys = Object.keys(groups);
+  const t = body.match(/총\s*([0-9][0-9,]*)\s*종/);
+  if (!t || keys.length < 2) return out;
+
+  const total = toInt(t[1])!;
+  const sum = keys.reduce((a, k) => a + groups[k].species, 0);
+  if (sum === total) return out;
+
+  const totalEvidence = snippet(body, body.indexOf(t[0]), body.indexOf(t[0]) + t[0].length);
+  out.push({
+    id: rid("bird-gsum"),
+    category: "STATISTICS",
+    severity: "CRITICAL",
+    section: "분류군별 종 구성",
+    title: `[불일치 의심] 목·과별 종수 합계(${sum}종)와 총 종수(${total}종) 불일치`,
+    description:
+      `분류군(목/과)별로 기재된 종수의 합(${sum}종)이 보고서 총 종수(${total}종)와 일치하지 않습니다. ` +
+      `분류군별 수치(${keys.map((k) => `${k} ${groups[k].species}종`).join(", ")}) 또는 총계에 오기가 있는지 확인이 필요합니다.`,
+    isSuspectedInconsistency: true,
+    inconsistencyType: "DOMAIN_METRICS",
+    conflictingPassages: {
+      locationA: "분류군별 종 구성 서술/표", textA: `분류군별 종수 합 = ${sum}종`,
+      locationB: "총 종수(총괄)", textB: totalEvidence,
+    },
+    suggestedFix: "분류군별 종수와 총 종수(총괄표)를 재확인하여 합계를 일치시키십시오.",
+  });
+  return out;
+}
+
+// ---------------------------------------------------------------------------
 // 공개: 분야별 내부 정합성·품질 통합 검사 (분야에 따라 적용 규칙 분기)
 // ---------------------------------------------------------------------------
 export function runFieldConsistencyChecks(
@@ -463,6 +523,9 @@ export function runFieldConsistencyChecks(
     }
     if (fieldId === "fish") {
       return [...checkFamilyArithmetic(body), ...common];
+    }
+    if (fieldId === "birds") {
+      return [...checkGroupSpeciesArithmetic(body), ...common];
     }
     return [];
   } catch (e) {
