@@ -144,35 +144,69 @@ function extractReportCounts(body: string, baseYear: string): CountItem[] {
 }
 
 // ---------------------------------------------------------------------------
-// 검사 1: 금번조사 종수 내부 모순
+// 검사 1: 금번조사 '전체 종수' 내부 모순
 // ---------------------------------------------------------------------------
+// 보고서에는 하위그룹(양서류/파충류)·범주(멸종위기/고유종)·조사지점/격자별 종수가
+// 많이 나온다. 이를 전체 종수 모순으로 오인하지 않도록 두 단계로 걸러낸다.
+//   1) 하위그룹·범주·지점/격자 수식어가 앞에 붙은 종수는 '전체 종수'가 아니므로 제외
+//   2) 남은 값 중 서로 '가까운'(작은쪽/큰쪽 ≥ 0.85) 쌍이 있을 때만 동일 전체 종수의
+//      오기로 보고 탐지 (하위그룹은 값 차이가 커서 걸러진다)
+const SUBGROUP_WORDS = [
+  "양서류", "파충류", "무척추", "멸종위기", "위급", "위기", "취약", "관심", "고유종",
+  "특정종", "국외반출", "기후변화", "적색", "외래", "귀화", "교란", "신규", "추가",
+  "중복", "지표", "지점", "격자", "정점", "구간", "개체", "아과", "선행", "기존",
+  "합계", "소계", "부분합",
+];
+const NEAR_RATIO = 0.85; // 두 값이 이 비율 이상 가까울 때만 동일 전체 종수의 오기로 본다
+const MIN_TOTAL_SPECIES = 20; // 소규모 하위그룹(한 자리·10여 종)을 전체 종수로 오인하지 않도록
+
+function isSubgroupCount(body: string, index: number): boolean {
+  const pre = body.slice(Math.max(0, index - 22), index);
+  if (SUBGROUP_WORDS.some((w) => pre.includes(w))) return true;
+  if (/E\s?[1-9]\b/.test(pre)) return true; // 조사격자 E1~E9
+  return false;
+}
+
 function checkSpeciesCountConsistency(body: string, baseYear: string): DiscrepancyItem[] {
   const out: DiscrepancyItem[] = [];
-  const counts = extractReportCounts(body, baseYear);
-  const comparable = counts.filter((c) => c.scope === "금번" || c.scope === "불명");
-  const distinct = [...new Set(comparable.map((c) => c.count))];
-  if (distinct.length > 1) {
-    const a = comparable.find((c) => c.count === distinct[0])!;
-    const b = comparable.find((c) => c.count === distinct[distinct.length - 1])!;
-    out.push({
-      id: rid("ins-scnt"),
-      category: "INTERNAL_CONSISTENCY",
-      severity: "CRITICAL",
-      section: "종 다양성 현황 (Results)",
-      title: `[불일치 의심] 금번조사 종수 표현 상호 불일치 (${distinct.join("종 ≠ ")}종)`,
-      description:
-        `보고서 본문에서 금번(당해) 조사 종수가 서로 다르게 기재되어 있습니다: ` +
-        `${comparable.map((c) => `${c.matched}(${c.count}종)`).join(", ")}. ` +
-        `선행조사·종합(금번+선행) 수치는 비교에서 제외하고 금번조사 수치만 대조하였습니다.`,
-      isSuspectedInconsistency: true,
-      inconsistencyType: "SPECIES_COUNT",
-      conflictingPassages: {
-        locationA: `본문 (${a.name})`, textA: a.evidence,
-        locationB: `본문 (${b.name})`, textB: b.evidence,
-      },
-      suggestedFix: "본문 요약·결과 표·고찰의 '금번조사' 종수를 동일한 수치로 통일하십시오.",
-    });
+  const counts = extractReportCounts(body, baseYear).filter(
+    (c) => (c.scope === "금번" || c.scope === "불명") && !isSubgroupCount(body, c.index)
+  );
+  const vals = [...new Set(counts.map((c) => c.count))]
+    .filter((v) => v >= MIN_TOTAL_SPECIES)
+    .sort((x, y) => y - x); // 내림차순
+  if (vals.length < 2) return out;
+
+  // 서로 가장 가까운(비율 최대) 쌍을 찾는다
+  let best: { hi: number; lo: number; r: number } | null = null;
+  for (let i = 0; i < vals.length; i++) {
+    for (let j = i + 1; j < vals.length; j++) {
+      const r = vals[j] / vals[i];
+      if (r >= NEAR_RATIO && (!best || r > best.r)) best = { hi: vals[i], lo: vals[j], r };
+    }
   }
+  if (!best) return out;
+
+  const a = counts.find((c) => c.count === best!.hi)!;
+  const b = counts.find((c) => c.count === best!.lo)!;
+  out.push({
+    id: rid("ins-scnt"),
+    category: "INTERNAL_CONSISTENCY",
+    severity: "CRITICAL",
+    section: "종 다양성 현황 (Results)",
+    title: `[불일치 의심] 전체 종수 표현 상호 불일치 (${best.hi}종 ≠ ${best.lo}종)`,
+    description:
+      `보고서 본문에서 전체(금번) 조사 종수로 보이는 값이 서로 다르게 기재되어 있습니다: ` +
+      `${a.matched}(${a.count}종), ${b.matched}(${b.count}종). ` +
+      `하위그룹·범주·지점별 종수, 선행조사·종합 수치는 비교에서 제외하였습니다.`,
+    isSuspectedInconsistency: true,
+    inconsistencyType: "SPECIES_COUNT",
+    conflictingPassages: {
+      locationA: `본문 (${a.name})`, textA: a.evidence,
+      locationB: `본문 (${b.name})`, textB: b.evidence,
+    },
+    suggestedFix: "본문 요약·결과 표·고찰의 전체 종수를 동일한 수치로 통일하십시오.",
+  });
   return out;
 }
 
@@ -204,6 +238,11 @@ function checkOrderArithmetic(body: string): DiscrepancyItem[] {
   if (!t || keys.length < 2) return out;
 
   const totalOrders = toInt(t[1])!, totalFamily = toInt(t[2])!, totalSpecies = toInt(t[3])!;
+
+  // 본문에 서술된 목 수가 총 목 수와 다르면(= 일부 목이 표에만 있고 프로세스로 서술 안 됨)
+  // 합계를 신뢰할 수 없으므로 검증하지 않는다(실제 보고서 오탐 방지).
+  if (keys.length !== totalOrders) return out;
+
   const sumFamily = keys.reduce((a, k) => a + orders[k].family, 0);
   const sumSpecies = keys.reduce((a, k) => a + orders[k].species, 0);
   const totalEvidence = snippet(body, body.indexOf(t[0]), body.indexOf(t[0]) + t[0].length);
@@ -240,21 +279,6 @@ function checkOrderArithmetic(body: string): DiscrepancyItem[] {
       isSuspectedInconsistency: true,
       inconsistencyType: "DOMAIN_METRICS",
       suggestedFix: "목별 과수와 총 과수(총괄표)를 재확인하여 일치시키십시오.",
-    });
-  }
-  if (keys.length !== totalOrders) {
-    out.push({
-      id: rid("ins-onum"),
-      category: "STATISTICS",
-      severity: "WARNING",
-      section: "목별 다양성 구성",
-      title: `[검토] 서술된 목 수(${keys.length}개)와 총 목 수(${totalOrders}목) 불일치`,
-      description:
-        `본문에 과·종수가 기재된 목은 ${keys.length}개(${keys.join(", ")})인데 총계는 ${totalOrders}목입니다. ` +
-        `목록 표에는 있으나 본문 서술에서 누락된 목이 있는지 확인하십시오.`,
-      isSuspectedInconsistency: true,
-      inconsistencyType: "DOMAIN_METRICS",
-      suggestedFix: "목별 구성비 서술에 누락된 목이 없는지 확인하십시오.",
     });
   }
   return out;
@@ -397,6 +421,10 @@ function checkFamilyArithmetic(body: string): DiscrepancyItem[] {
   if (!t || keys.length < 2) return out;
 
   const totalFam = toInt(t[1])!, totalSp = toInt(t[2])!;
+
+  // 본문에 서술된 과 수가 총 과 수와 다르면(일부 과가 표에만 있음) 합계 검증 불가.
+  if (keys.length !== totalFam) return out;
+
   const sumSp = keys.reduce((a, k) => a + fams[k].species, 0);
   const totalEvidence = snippet(body, body.indexOf(t[0]), body.indexOf(t[0]) + t[0].length);
 
@@ -417,21 +445,6 @@ function checkFamilyArithmetic(body: string): DiscrepancyItem[] {
         locationB: "총 종수(총괄)", textB: totalEvidence,
       },
       suggestedFix: "과별 종 구성표의 종수와 총 종수(총괄표)를 재확인하여 합계를 일치시키십시오.",
-    });
-  }
-  if (keys.length !== totalFam) {
-    out.push({
-      id: rid("fish-fnum"),
-      category: "STATISTICS",
-      severity: "WARNING",
-      section: "과별 종 구성",
-      title: `[검토] 서술된 과 수(${keys.length}개)와 총 과 수(${totalFam}과) 불일치`,
-      description:
-        `본문에 종수가 기재된 과는 ${keys.length}개(${keys.join(", ")})인데 총계는 ${totalFam}과입니다. ` +
-        `목록 표에는 있으나 본문 서술에서 누락된 과가 있는지 확인하십시오.`,
-      isSuspectedInconsistency: true,
-      inconsistencyType: "DOMAIN_METRICS",
-      suggestedFix: "과별 구성 서술에 누락된 과가 없는지 확인하십시오.",
     });
   }
   return out;
@@ -474,7 +487,10 @@ function checkGroupSpeciesArithmetic(body: string): DiscrepancyItem[] {
 
   const total = toInt(t[1])!;
   const sum = keys.reduce((a, k) => a + groups[k].species, 0);
-  if (sum === total) return out;
+  // '총 N종'에는 목/과 개수가 없어 서술 누락을 감지할 수 없다.
+  // 합이 총계보다 '작으면' 표에만 있는 그룹이 있을 수 있어(정상) 판정하지 않고,
+  // 합이 총계를 '초과'할 때만 실제 오류(중복·오기)로 본다.
+  if (sum <= total) return out;
 
   const totalEvidence = snippet(body, body.indexOf(t[0]), body.indexOf(t[0]) + t[0].length);
   out.push({
@@ -482,10 +498,10 @@ function checkGroupSpeciesArithmetic(body: string): DiscrepancyItem[] {
     category: "STATISTICS",
     severity: "CRITICAL",
     section: "분류군별 종 구성",
-    title: `[불일치 의심] 목·과별 종수 합계(${sum}종)와 총 종수(${total}종) 불일치`,
+    title: `[불일치 의심] 목·과별 종수 합계(${sum}종)가 총 종수(${total}종)를 초과`,
     description:
-      `분류군(목/과)별로 기재된 종수의 합(${sum}종)이 보고서 총 종수(${total}종)와 일치하지 않습니다. ` +
-      `분류군별 수치(${keys.map((k) => `${k} ${groups[k].species}종`).join(", ")}) 또는 총계에 오기가 있는지 확인이 필요합니다.`,
+      `분류군(목/과)별로 기재된 종수의 합(${sum}종)이 보고서 총 종수(${total}종)보다 많습니다. ` +
+      `분류군별 수치(${keys.map((k) => `${k} ${groups[k].species}종`).join(", ")}) 또는 총계에 오기·중복이 있는지 확인이 필요합니다.`,
     isSuspectedInconsistency: true,
     inconsistencyType: "DOMAIN_METRICS",
     conflictingPassages: {
