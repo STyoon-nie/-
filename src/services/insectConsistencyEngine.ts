@@ -261,7 +261,112 @@ function checkOrderArithmetic(body: string): DiscrepancyItem[] {
 }
 
 // ---------------------------------------------------------------------------
-// 공개: 곤충 정합성 통합 검사
+// 검사 3: 편집 잔존 문구 (미완성 보고서 표시)
+// ---------------------------------------------------------------------------
+const RESIDUAL_KEYWORDS = [
+  "작성 중", "작성중", "추후 입력", "추후입력", "수정 필요", "수정필요",
+  "확인 필요", "확인필요", "삭제 예정", "삭제예정", "그림 삽입", "그림삽입",
+  "표 삽입", "표삽입", "TBD", "미기재",
+];
+
+function checkResidualKeywords(body: string): DiscrepancyItem[] {
+  const found: string[] = [];
+  let firstIdx = -1;
+  for (const kw of RESIDUAL_KEYWORDS) {
+    const i = body.indexOf(kw);
+    if (i >= 0) { found.push(kw); if (firstIdx < 0 || i < firstIdx) firstIdx = i; }
+  }
+  if (!found.length) return [];
+  return [{
+    id: rid("ins-resid"),
+    category: "STRUCTURE",
+    severity: "WARNING",
+    section: "보고서 완성도",
+    title: `[편집 잔존] 미완성·편집 표시 문구 발견 (${found.slice(0, 5).join(", ")}${found.length > 5 ? " 등" : ""})`,
+    description: `최종 보고서에 편집 중 표시로 보이는 문구가 남아 있습니다: ${found.join(", ")}. 실제 조사 내용으로 교체하거나 삭제해야 합니다.`,
+    targetExcerpt: firstIdx >= 0 ? snippet(body, firstIdx, firstIdx + 2) : undefined,
+    suggestedFix: "해당 문구를 실제 내용으로 교체하거나 제거하십시오.",
+  }];
+}
+
+// ---------------------------------------------------------------------------
+// 검사 4: 표·그림 번호 (중복·결번) — PDF 추출 한계로 검토 권고 수준
+// ---------------------------------------------------------------------------
+function checkFigureTableNumbers(body: string): DiscrepancyItem[] {
+  const caps: Record<string, string[]> = {};
+  const re = /(?:^|\n)\s*(표|그림|Table|Fig\.?|Figure)\s*([0-9]+)(?:\s*[-–.]\s*([0-9]+))?/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body))) {
+    const pre = /표/.test(m[1]) ? "표" : /그림/.test(m[1]) ? "그림" : /Tab/i.test(m[1]) ? "표(Table)" : "그림(Fig)";
+    const num = m[3] ? `${m[2]}-${m[3]}` : m[2];
+    (caps[pre] = caps[pre] || []).push(num);
+  }
+  const out: DiscrepancyItem[] = [];
+  for (const pre of Object.keys(caps)) {
+    const list = caps[pre];
+    const seen: Record<string, number> = {};
+    list.forEach((n) => (seen[n] = (seen[n] || 0) + 1));
+    const dups = Object.keys(seen).filter((n) => seen[n] > 1);
+    if (dups.length) {
+      out.push({
+        id: rid("ins-figdup"),
+        category: "STRUCTURE",
+        severity: "RECOMMENDATION",
+        section: "표·그림 번호",
+        title: `[검토] ${pre} 번호 중복 (${dups.join(", ")})`,
+        description: `동일한 ${pre} 번호가 여러 번 사용되었습니다: ${dups.join(", ")}. 캡션 번호 체계를 확인하십시오. (PDF 추출 특성상 오탐일 수 있어 검토 권고 수준입니다.)`,
+        suggestedFix: `${pre} 캡션 번호를 순서대로 재부여하십시오.`,
+      });
+    }
+    const ints = [...new Set(list.filter((n) => /^[0-9]+$/.test(n)).map(Number))];
+    if (ints.length >= 3) {
+      const max = Math.max(...ints);
+      const miss: number[] = [];
+      for (let i = 1; i <= max; i++) if (!ints.includes(i)) miss.push(i);
+      if (miss.length) {
+        out.push({
+          id: rid("ins-figgap"),
+          category: "STRUCTURE",
+          severity: "RECOMMENDATION",
+          section: "표·그림 번호",
+          title: `[검토] ${pre} 번호 결번 (${miss.join(", ")})`,
+          description: `${pre} 번호가 중간에 비어 있습니다(누락: ${miss.join(", ")}). 실제 누락인지 확인하십시오. (PDF 추출 한계로 오탐일 수 있습니다.)`,
+          suggestedFix: `${pre} 번호 체계를 확인하십시오.`,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// 검사 5: 학명 종소명 대문자 표기 의심 (보수적 — 국명 뒤 이명binomial만)
+// ---------------------------------------------------------------------------
+function checkScientificNameFormat(body: string): DiscrepancyItem[] {
+  const re = /[가-힣]{2,}\s+([A-Z][a-z]{2,})\s+([A-Za-z][A-Za-z-]+)/g;
+  const open = new Set(["sp", "spp", "cf", "aff", "var", "subsp", "ssp"]);
+  const bad = new Set<string>();
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body))) {
+    const genus = m[1], ep = m[2];
+    if (open.has(ep.replace(/\.$/, "").toLowerCase())) continue;
+    if (/^[A-Z]/.test(ep)) bad.add(`${genus} ${ep}`);
+  }
+  if (!bad.size) return [];
+  const examples = [...bad].slice(0, 6);
+  return [{
+    id: rid("ins-sciname"),
+    category: "TAXONOMY",
+    severity: "RECOMMENDATION",
+    section: "학명 표기",
+    title: `[검토] 학명 종소명 대문자 표기 의심 (${bad.size}건)`,
+    description: `종소명(species epithet)은 소문자로 표기해야 합니다. 대문자로 시작하는 것으로 보이는 학명: ${examples.join(", ")}${bad.size > 6 ? " 등" : ""}. 명명자명(Author)과 혼동되지 않았는지 확인하십시오.`,
+    suggestedFix: "종소명을 소문자로 표기하십시오 (예: Pieris rapae).",
+  }];
+}
+
+// ---------------------------------------------------------------------------
+// 공개: 곤충 정합성·품질 통합 검사
 // ---------------------------------------------------------------------------
 export function runInsectConsistencyChecks(rawText: string, surveyYear?: string): DiscrepancyItem[] {
   try {
@@ -271,6 +376,9 @@ export function runInsectConsistencyChecks(rawText: string, surveyYear?: string)
     return [
       ...checkSpeciesCountConsistency(body, baseYear),
       ...checkOrderArithmetic(body),
+      ...checkResidualKeywords(body),
+      ...checkFigureTableNumbers(body),
+      ...checkScientificNameFormat(body),
     ];
   } catch (e) {
     // 검수 도구 자체 오류가 전체 분석을 막지 않도록 방어
