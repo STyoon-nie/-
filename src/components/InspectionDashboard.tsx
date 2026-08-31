@@ -764,7 +764,7 @@ export const InspectionDashboard: React.FC<InspectionDashboardProps> = ({
                             ) : (
                               <>
                                 <Wand2 className="w-3.5 h-3.5 text-emerald-300" />
-                                <span>AI 즉시 교정</span>
+                                <span>표준 수정문안 적용</span>
                               </>
                             )}
                           </button>

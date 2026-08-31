@@ -130,10 +130,10 @@ export const Header: React.FC<HeaderProps> = ({
               <span className="sm:hidden">지침서</span>
             </button>
 
-            {/* SLA Badge */}
+            {/* 처리 방식 배지 */}
             <div className="hidden md:flex items-center space-x-1.5 px-2.5 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-800 text-xs font-medium">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="font-mono font-bold text-[11px]">SLA {systemHealth?.sla || "99.99%"}</span>
+              <span className="font-mono font-bold text-[11px]">규칙 기반 · 로컬 처리</span>
             </div>
           </div>
         </div>

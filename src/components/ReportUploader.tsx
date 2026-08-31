@@ -197,7 +197,7 @@ export const ReportUploader: React.FC<ReportUploaderProps> = ({
             <Info className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
             <div className="leading-relaxed">
               <strong className="text-emerald-900">{currentField.name} 분야 전용 검수 프리셋:</strong> 아래 준비된 실제
-              오류 사례 보고서 또는 표준 적합 보고서를 선택하면, 즉시 <strong>분야 적합성 교차검증</strong>, 결함 분석 및 AI 정밀 검수가
+              오류 사례 보고서 또는 표준 적합 보고서를 선택하면, 즉시 <strong>분야 적합성 교차검증</strong>, 결함 분석 및 표준 규칙 정밀 검수가
               시작됩니다. (타 분야 문서가 첨부될 경우 시스템이 자동 감지하여 전환을 안내합니다.)
             </div>
           </div>

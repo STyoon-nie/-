@@ -22,7 +22,7 @@ export const AIReviewSection: React.FC<AIReviewSectionProps> = ({
           </div>
           <div>
             <h3 className="text-sm font-bold text-white">
-              Gemini 3.7 Flash 생태학 AI 전문 심사관 분석 진행 중...
+              표준 규칙 기반 종합 검토 진행 중...
             </h3>
             <p className="text-xs text-emerald-300/80">
               {fieldName} 분야의 학술적 방법론 타당성 및 서식지 보전 논리 일관성을 정밀 검증하고 있습니다.
@@ -46,12 +46,12 @@ export const AIReviewSection: React.FC<AIReviewSectionProps> = ({
           <div>
             <div className="flex items-center space-x-2">
               <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-300 border border-emerald-400/30">
-                AI 정밀 질적 심사 (Qualitative Review)
+                표준 규칙 기반 종합 검토
               </span>
-              <span className="text-[11px] text-slate-400 font-mono">Gemini 3.7 Core</span>
+              <span className="text-[11px] text-slate-400 font-mono">Rule Engine</span>
             </div>
             <h3 className="text-base font-bold text-white mt-0.5">
-              국립생태원 수석 심사관 AI 정밀 평가서
+              국립생태원 표준 규칙 기반 검토 의견
             </h3>
           </div>
         </div>

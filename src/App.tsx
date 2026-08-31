@@ -290,8 +290,8 @@ export default function App() {
               <span>전국 자연환경조사 생태보고서 검수시스템</span>
             </div>
             <div className="flex items-center space-x-4 text-[11px] text-slate-500 font-mono">
-              <span>SLA: 99.99% (24/7 HA)</span>
-              <span>보안: K-BML v2.4 표준 준수</span>
+              <span>처리: 브라우저 내 로컬 (설치·서버 불필요)</span>
+              <span>기준: 국가생물종목록(K-BML) 표준 준수</span>
             </div>
           </div>
         </footer>

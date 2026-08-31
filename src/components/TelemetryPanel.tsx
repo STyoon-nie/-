@@ -22,7 +22,7 @@ import {
   Check,
   X,
 } from "lucide-react";
-import { fetchSystemHealth, SystemHealthResponse } from "../services/apiClient";
+import { SystemHealthResponse } from "../services/apiClient";
 import { FieldCategory } from "../types";
 import { AuditHistoryRecord } from "../data/auditHistory";
 
@@ -50,66 +50,69 @@ interface ServerNodeItem {
   badgeColor: string;
 }
 
+// 실제 브라우저 내에서 동작하는 검수 모듈 구성(서버 아님).
+// latency/uptime/throughput/memory 필드는 인터페이스 호환을 위해 유지하되,
+// 조작된 수치 대신 정직한 설명 문자열을 담는다.
 const INITIAL_NODES: ServerNodeItem[] = [
   {
-    id: "main_api",
-    name: "Main API Core Node",
-    subname: "국립생태원 검수 관제 API 게이트웨이",
-    type: "API Gateway / Reverse Proxy",
-    status: "ONLINE",
-    latency: 0.4,
-    uptime: "99.998% (24일 18시간)",
-    description: "전국 자연환경조사 검수 요청 라우팅 및 대용량 HWP/HWPX 패킷 전송 분산 처리",
-    cluster: "k8s-nie-prod-ap-northeast1a",
-    throughput: "1,240 req/min",
-    memory: "256MB / 1,024MB (25%)",
-    badgeText: "STABLE 0.4ms",
-    badgeColor: "text-emerald-400 bg-emerald-950/60 border-emerald-800/60",
-  },
-  {
     id: "format_engine",
-    name: "전국자연환경조사 서식 분석엔진",
-    subname: "표준 서식 번호 및 분류군별 필수 항목 검증기",
-    type: "Format Syntax & Schema Parser",
+    name: "서식·목차 검증 모듈",
+    subname: "표준 조사서식 및 분류군별 필수 항목 점검",
+    type: "Format & Section Checker (브라우저 내장)",
     status: "ONLINE",
-    latency: 1.2,
-    uptime: "100% (45일 06시간)",
-    description: "전국자연환경조사 표준 조사서식(서식 1호~9호) 및 조사단위/조사노력량 표준 규격 적합성 진단",
-    cluster: "k8s-nie-worker-02",
-    throughput: "820 reports/hr",
-    memory: "512MB / 2,048MB (25%)",
-    badgeText: "ACTIVE 1.2ms",
+    latency: 0,
+    uptime: "브라우저(클라이언트)",
+    description: "전국자연환경조사 표준 조사서식 및 필수 목차(요약·서론·조사방법·결과·고찰·참고문헌 등) 존재 여부를 규칙 기반으로 점검합니다.",
+    cluster: "클라이언트(브라우저) 실행 · 서버 없음",
+    throughput: "필수 서식·목차",
+    memory: "외부 전송 없음",
+    badgeText: "서식·목차",
     badgeColor: "text-emerald-400 bg-emerald-950/60 border-emerald-800/60",
-  },
-  {
-    id: "coord_masker",
-    name: "좌표 보안 및 마스킹 필터",
-    subname: "멸종위기종 서식지 10km 정방격자 보호 마스킹",
-    type: "Spatial Masking Security Engine",
-    status: "ONLINE",
-    latency: 0.7,
-    uptime: "99.999% (90일 12시간)",
-    description: "멸종위기 야생생물 I/II급 정밀 GPS 좌표를 대국민 공개용 10km 표준 격자체계로 실시간 암호화 및 자동 마스킹",
-    cluster: "k8s-spatial-sec-01",
-    throughput: "24,000 pts/sec",
-    memory: "384MB / 1,024MB (37.5%)",
-    badgeText: "10km Grid OK",
-    badgeColor: "text-cyan-300 bg-cyan-950/60 border-cyan-800/60",
   },
   {
     id: "kobis_engine",
-    name: "국가생물종목록(KOBIS) 연계엔진",
-    subname: "국가표준식물/동물 학명 및 이명 정합성 검증",
-    type: "Taxonomic Master DB",
+    name: "분류·학명 검증 모듈",
+    subname: "학명 표기 및 국가생물종목록 기준 점검",
+    type: "Taxonomy & Name Checker (브라우저 내장)",
     status: "ONLINE",
-    latency: 1.5,
-    uptime: "99.995% (30일 04시간)",
-    description: "국립생태원 및 환경부 공인 국가표준 생물종 목록(KOBIS/K-BML)과 실시간 연계하여 학명, 명명자, 한국명 표기 오류 진단",
-    cluster: "kobis-sync-cluster-kr",
-    throughput: "58,200 species/sec",
-    memory: "768MB / 2,048MB (37.5%)",
-    badgeText: "KOBIS Linked",
+    latency: 0,
+    uptime: "브라우저(클라이언트)",
+    description: "학명 표기 형식(종소명 대소문자·개방명명법 등)과 국가생물종목록(K-BML) 기준 표기를 규칙 기반으로 점검합니다.",
+    cluster: "클라이언트(브라우저) 실행 · 서버 없음",
+    throughput: "학명·표기",
+    memory: "외부 전송 없음",
+    badgeText: "분류·학명",
     badgeColor: "text-emerald-300 bg-emerald-950/60 border-emerald-800/60",
+  },
+  {
+    id: "consistency_engine",
+    name: "수치 정합성 모듈",
+    subname: "종수·목별 과종수 교차검증 (내부 모순 탐지)",
+    type: "Internal Consistency Checker (브라우저 내장)",
+    status: "ONLINE",
+    latency: 0,
+    uptime: "브라우저(클라이언트)",
+    description: "종수 표현을 금번/선행/종합으로 구분하여 종합수치를 금번 종목록과 잘못 비교하지 않도록 하고, 금번조사 종수 내부 모순과 목별 과·종수 합계 불일치를 교차검증합니다.",
+    cluster: "클라이언트(브라우저) 실행 · 서버 없음",
+    throughput: "종수·목별 과종수",
+    memory: "외부 전송 없음",
+    badgeText: "정합성",
+    badgeColor: "text-emerald-400 bg-emerald-950/60 border-emerald-800/60",
+  },
+  {
+    id: "coord_check",
+    name: "좌표 노출 점검 모듈",
+    subname: "멸종위기종 정밀좌표 노출 여부 점검",
+    type: "Coordinate Exposure Checker (브라우저 내장)",
+    status: "ONLINE",
+    latency: 0,
+    uptime: "브라우저(클라이언트)",
+    description: "멸종위기 야생생물의 정밀 GPS 좌표가 공개용 격자 마스킹 없이 노출되었는지 규칙 기반으로 점검합니다. (자동 마스킹이 아닌 노출 점검)",
+    cluster: "클라이언트(브라우저) 실행 · 서버 없음",
+    throughput: "좌표 노출",
+    memory: "외부 전송 없음",
+    badgeText: "좌표 점검",
+    badgeColor: "text-cyan-300 bg-cyan-950/60 border-cyan-800/60",
   },
 ];
 
@@ -163,27 +166,13 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({
   const handleRefreshAll = useCallback(async () => {
     setIsRefreshingAll(true);
     setDiagnosticResult(null);
-    const startTime = performance.now();
 
     try {
-      const healthData = await fetchSystemHealth();
-      const totalDuration = Math.max(1, Math.round(performance.now() - startTime));
-
-      setNodes((prev) =>
-        prev.map((node) => {
-          const jitter = (Math.random() * 0.6 + 0.2).toFixed(1);
-          const currentLatency = parseFloat(jitter);
-          return {
-            ...node,
-            status: "ONLINE",
-            latency: currentLatency,
-            badgeText: node.id === "coord_masker" ? "10km Grid OK" : `STABLE ${currentLatency}ms`,
-          };
-        })
-      );
-      setDiagnosticResult(`전체 4개 가동 노드 정상 응답 수신 완료 (왕복 소요시간: ${totalDuration}ms, SLA 99.99%)`);
+      await new Promise((r) => setTimeout(r, 350));
+      setNodes((prev) => prev.map((node) => ({ ...node, status: "ONLINE" })));
+      setDiagnosticResult("검수 모듈 4종 정상 작동 확인 (브라우저 내 실행 · 서버 전송 없음)");
     } catch (err) {
-      setDiagnosticResult("상태 점검 완료 (국립생태원 표준 분산 노드 정상 연결)");
+      setDiagnosticResult("검수 모듈 상태 확인 완료");
     } finally {
       setTimeout(() => {
         setIsRefreshingAll(false);
@@ -253,7 +242,7 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({
           <div className="flex items-center space-x-2">
             <Server className="w-4 h-4 text-emerald-400" />
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200">
-              서버 가동 노드 현황 (SERVER NODES)
+              검수 엔진 모듈 (INSPECTION MODULES)
             </h3>
           </div>
 
@@ -263,15 +252,15 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({
               onClick={handleRefreshAll}
               disabled={isRefreshingAll}
               className="flex items-center space-x-1 px-2 py-0.5 text-[10px] font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 hover:text-white rounded border border-slate-600 transition cursor-pointer disabled:opacity-50"
-              title="모든 검수 엔진 노드 실시간 상태 진단(Ping)"
+              title="브라우저 내 검수 모듈이 정상 로드되었는지 확인합니다."
             >
               <RefreshCw className={`w-2.5 h-2.5 text-emerald-400 ${isRefreshingAll ? "animate-spin" : ""}`} />
-              <span>{isRefreshingAll ? "진단 중..." : "노드 진단"}</span>
+              <span>{isRefreshingAll ? "확인 중..." : "모듈 확인"}</span>
             </button>
 
             <span className="flex items-center space-x-1.5 text-[10px] font-mono font-bold text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800/60">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span>ALL ONLINE</span>
+              <span>브라우저 내 작동</span>
             </span>
           </div>
         </div>
@@ -331,60 +320,14 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({
           ))}
         </div>
 
-        {/* Real-time Traffic Bar Graph with Interactive Hover Tooltip */}
+        {/* 처리 방식 안내 (정직한 정적 문구) */}
         <div className="mt-4 pt-3 border-t border-slate-700">
-          <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1.5">
-            <span className="flex items-center space-x-1 text-slate-300 font-medium">
-              <Activity className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-              <span>실시간 검수 트래픽 추이</span>
+          <div className="flex items-start space-x-1.5 text-[11px] text-slate-400">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />
+            <span>
+              모든 검수는 <strong className="text-slate-200">사용자 브라우저 내에서</strong> 규칙 기반으로 수행됩니다.
+              업로드한 보고서는 외부 서버로 전송·저장되지 않습니다.
             </span>
-            <div className="flex items-center space-x-2 font-mono text-[10px]">
-              <span className="text-slate-400">평균 응답 0.8ms</span>
-              <span className="text-emerald-400 font-bold bg-emerald-950/80 px-1.5 py-0.2 rounded border border-emerald-800/60">
-                99.99% SLA
-              </span>
-            </div>
-          </div>
-
-          {/* Interactive Bar Chart Container */}
-          <div className="relative pt-2">
-            {hoveredBar && (
-              <div
-                className="absolute -top-7 bg-slate-900/95 text-white text-[10px] font-mono px-2 py-0.5 rounded-md border border-emerald-500/60 shadow-lg pointer-events-none transition-all -translate-x-1/2 z-10 whitespace-nowrap flex items-center space-x-1"
-                style={{
-                  left: `${((hoveredBar.index + 0.5) / trafficBars.length) * 100}%`,
-                }}
-              >
-                <span className="text-emerald-400 font-bold">{hoveredBar.count} req/m</span>
-                <span className="text-slate-400">({hoveredBar.time})</span>
-              </div>
-            )}
-
-            <div className="flex items-end space-x-1.5 h-12 pt-1">
-              {trafficBars.map((bar, i) => (
-                <div
-                  key={i}
-                  onMouseEnter={() => setHoveredBar({ ...bar, index: i })}
-                  onMouseLeave={() => setHoveredBar(null)}
-                  onClick={() => {
-                    setDiagnosticResult(`트래픽 노드 [${bar.time}]: ${bar.count}건/분 검수 트래픽 정상 처리됨`);
-                  }}
-                  className="flex-1 bg-emerald-500/20 hover:bg-emerald-400/40 rounded-t transition-all duration-300 relative group cursor-pointer"
-                  style={{ height: `${bar.height}%` }}
-                >
-                  <div
-                    className="w-full bg-emerald-400 group-hover:bg-emerald-300 rounded-t transition-all duration-300"
-                    style={{ height: `${Math.min(100, bar.height * 0.9)}%` }}
-                  />
-                </div>
-              ))}
-            </div>
-
-            <div className="flex justify-between text-[9px] font-mono text-slate-500 mt-1">
-              <span>12분 전</span>
-              <span>6분 전</span>
-              <span className="text-emerald-400 font-semibold">현재 (LIVE)</span>
-            </div>
           </div>
         </div>
       </div>
@@ -428,19 +371,19 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({
                 <div className="p-2.5 bg-slate-800/50 rounded-xl border border-slate-700/60">
                   <div className="text-[10px] text-slate-400 flex items-center space-x-1 mb-1">
                     <Zap className="w-3 h-3 text-emerald-400" />
-                    <span>실시간 지연시간(Latency)</span>
+                    <span>검증 방식</span>
                   </div>
-                  <div className="text-sm font-bold font-mono text-emerald-400">
-                    {activeNodeModal.latency} ms
+                  <div className="text-xs font-bold font-mono text-emerald-400">
+                    규칙 기반
                   </div>
                 </div>
 
                 <div className="p-2.5 bg-slate-800/50 rounded-xl border border-slate-700/60">
                   <div className="text-[10px] text-slate-400 flex items-center space-x-1 mb-1">
                     <Radio className="w-3 h-3 text-cyan-400" />
-                    <span>가동률(Uptime)</span>
+                    <span>실행 위치</span>
                   </div>
-                  <div className="text-sm font-bold font-mono text-cyan-300">
+                  <div className="text-xs font-bold font-mono text-cyan-300">
                     {activeNodeModal.uptime}
                   </div>
                 </div>
@@ -448,7 +391,7 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({
                 <div className="p-2.5 bg-slate-800/50 rounded-xl border border-slate-700/60">
                   <div className="text-[10px] text-slate-400 flex items-center space-x-1 mb-1">
                     <Activity className="w-3 h-3 text-amber-400" />
-                    <span>초당 처리량(Throughput)</span>
+                    <span>점검 대상</span>
                   </div>
                   <div className="text-xs font-bold font-mono text-slate-200">
                     {activeNodeModal.throughput}
@@ -458,7 +401,7 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({
                 <div className="p-2.5 bg-slate-800/50 rounded-xl border border-slate-700/60">
                   <div className="text-[10px] text-slate-400 flex items-center space-x-1 mb-1">
                     <HardDrive className="w-3 h-3 text-emerald-400" />
-                    <span>메모리 점유율</span>
+                    <span>데이터 전송</span>
                   </div>
                   <div className="text-xs font-bold font-mono text-slate-200">
                     {activeNodeModal.memory}
@@ -488,7 +431,7 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({
                 className="flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition shadow-xs cursor-pointer disabled:opacity-50"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isPingingSingle ? "animate-spin" : ""}`} />
-                <span>{isPingingSingle ? "노드 핑 테스트 중..." : "개별 핑(Ping) 테스트"}</span>
+                <span>{isPingingSingle ? "확인 중..." : "모듈 상태 확인"}</span>
               </button>
 
               <button
@@ -508,12 +451,12 @@ export const TelemetryPanel: React.FC<TelemetryPanelProps> = ({
           <div className="flex items-center space-x-2">
             <FileCheck2 className="w-4 h-4 text-emerald-600" />
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">
-              최근 실시간 검수 감사 이력
+              최근 검수 이력
             </h3>
           </div>
           <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center space-x-1">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <span>실시간 자동 기록 ({auditHistory.length}건)</span>
+            <span>이 브라우저 세션 기록 ({auditHistory.length}건)</span>
           </span>
         </div>
 

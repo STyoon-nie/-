@@ -264,25 +264,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         </div>
 
-        {/* Bottom System Availability SLA Card */}
+        {/* Bottom Processing Info Card */}
         <div className="p-3 border-t border-slate-700/60 bg-[#142230]">
           <div className="bg-slate-800/80 rounded-xl p-3 border border-slate-700">
             <div className="flex items-center justify-between text-xs text-slate-300 mb-1">
               <span className="flex items-center space-x-1.5">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block" />
-                <span className="font-semibold text-white">시스템 가동상태</span>
+                <span className="font-semibold text-white">검수 엔진 상태</span>
               </span>
               <span className="text-[10px] font-mono font-bold text-emerald-400 bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-800/50">
-                정상
+                작동
               </span>
             </div>
             <div className="text-[11px] text-slate-400 flex items-center justify-between mt-2 pt-2 border-t border-slate-700/70">
-              <span>대국민 SLA</span>
-              <span className="font-mono text-white font-bold">{systemHealth?.sla || "99.99%"}</span>
+              <span>처리 방식</span>
+              <span className="font-mono text-white font-bold">로컬(브라우저)</span>
             </div>
             <div className="text-[10px] text-slate-400 mt-1 flex items-center space-x-1">
               <Server className="w-3 h-3 text-emerald-400 shrink-0" />
-              <span className="truncate">24/7/365 High Availability</span>
+              <span className="truncate">업로드 파일 외부 전송 없음</span>
             </div>
           </div>
         </div>
