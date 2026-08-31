@@ -1,0 +1,279 @@
+/*
+ * 육상곤충 보고서 내부 정합성 검수 (EcoCheck 이식)
+ * ------------------------------------------------------------------
+ * Python(Streamlit)에서 실측 검증한 곤충 검수 로직을 이 앱의
+ * DiscrepancyItem 형식으로 이식한 모듈. 모든 처리는 브라우저 안(클라이언트)에서
+ * 수행되며 외부 전송이 없다.
+ *
+ * 핵심 (기존 엔진이 놓치던 부분):
+ *  1) 종수 표현의 조사범위 판정(금번/선행/종합) — 금번+선행 종합수치(예: 683종)를
+ *     금번 종목록(예: 349종)과 잘못 비교해 생기는 오탐을 방지하고, 금번조사 종수끼리의
+ *     실제 모순만 잡는다.
+ *  2) 목(Order)별 과·종수 합계 검증 — 목별 기재 합이 총계(N목 M과 K종)와 맞는지 확인.
+ */
+
+import { DiscrepancyItem } from "../types";
+
+// ---------------------------------------------------------------------------
+// 조사범위 키워드
+// ---------------------------------------------------------------------------
+const SCOPE_KEYWORDS: Record<string, string[]> = {
+  종합: ["종합", "총괄", "누계", "누적", "합하면", "합치면", "합산", "종합하면",
+    "금번+선행", "금번 + 선행", "전체(금번", "전체 (금번", "금번과 선행", "선행조사와 금번", "종합적으로"],
+  선행: ["선행", "전번", "기존조사", "기존 조사", "이전 조사", "이전조사", "과거 조사",
+    "문헌조사", "문헌 조사", "기존자료", "기존 자료", "전차 조사", "직전 조사", "제5차", "제4차", "제3차"],
+  부분: ["신규", "새롭게", "추가된", "추가종", "특정종", "국외반출", "고유종",
+    "기후변화", "적색목록", "중복종", "지표종", "우점"],
+  금번: ["금번", "본 조사", "본조사", "이번 조사", "금차", "현지조사 결과", "본 연구", "금년", "당해"],
+};
+
+const REFERENCE_LABELS = ["참고문헌", "인용문헌", "References", "REFERENCES"];
+const APPENDIX_LABELS = ["부록", "부 록", "Appendix", "APPENDIX"];
+
+const COUNT_PATTERNS: { name: string; src: string; s: number }[] = [
+  { name: "총 N종", src: "총\\s*([0-9][0-9,]*)\\s*종", s: 1 },
+  { name: "총 N분류군", src: "총\\s*([0-9][0-9,]*)\\s*분류군", s: 1 },
+  { name: "N목 N과 N종", src: "[0-9]+\\s*목\\s*[0-9]+\\s*과\\s*([0-9][0-9,]*)\\s*종", s: 1 },
+  { name: "N종이 확인", src: "([0-9][0-9,]*)\\s*종\\s*이?\\s*(?:이|가)?\\s*확인", s: 1 },
+  { name: "N종을 확인", src: "([0-9][0-9,]*)\\s*종\\s*을\\s*확인", s: 1 },
+];
+
+const ORDER_SINGLE = "([가-힣]{1,10}목)\\s*([0-9]+)\\s*과\\s*([0-9][0-9,]*)\\s*종";
+const ORDER_SHARED = "([가-힣]{1,10}목)\\s*(?:과|와|,|·|、)\\s*([가-힣]{1,10}목)\\s*이?\\s*가?\\s*각각\\s*([0-9]+)\\s*과\\s*([0-9][0-9,]*)\\s*종";
+const TOTAL_RE = /([0-9]+)\s*목\s*([0-9]+)\s*과\s*([0-9][0-9,]*)\s*종/;
+
+// ---------------------------------------------------------------------------
+// 유틸
+// ---------------------------------------------------------------------------
+function toInt(s: string | undefined): number | null {
+  if (s == null) return null;
+  const d = String(s).replace(/[^0-9]/g, "");
+  return d ? parseInt(d, 10) : null;
+}
+function normSpace(s: string): string {
+  return String(s || "").replace(/\s+/g, " ").trim();
+}
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function snippet(text: string, start: number, end: number, w = 55): string {
+  const lo = Math.max(0, start - w), hi = Math.min(text.length, end + w);
+  return (lo > 0 ? "..." : "") + normSpace(text.slice(lo, hi)) + (hi < text.length ? "..." : "");
+}
+function rid(p: string): string {
+  return `${p}-${Math.random().toString(36).substring(2, 7)}`;
+}
+
+/** 참고문헌·부록 이후(후미)를 잘라 본문만 반환. */
+function bodyText(text: string): string {
+  if (!text) return "";
+  const floor = Math.floor(text.length * 0.05);
+  let best = text.length;
+  for (const label of REFERENCE_LABELS) {
+    const re = new RegExp("(^|\\n)[ \\t]*" + escapeRe(label) + "[ \\t]*(?=\\n|$)", "g");
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text))) { const p = m.index + (m[1] ? 1 : 0); if (p >= floor) { best = Math.min(best, p); break; } }
+  }
+  for (const label of APPENDIX_LABELS) {
+    const re = new RegExp("(^|\\n)[ \\t]*" + escapeRe(label) + "[ \\t]*[0-9]", "g");
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text))) { const p = m.index + (m[1] ? 1 : 0); if (p >= floor) { best = Math.min(best, p); break; } }
+  }
+  return text.slice(0, best);
+}
+
+// ---------------------------------------------------------------------------
+// 조사범위 판정
+// ---------------------------------------------------------------------------
+function extractSentence(text: string, start: number, end: number, maxChars = 400) {
+  const lo = Math.max(0, start - maxChars);
+  const head = text.slice(lo, start);
+  const bs = [...head.matchAll(/\.\s/g)];
+  const sentStart = lo + (bs.length ? bs[bs.length - 1].index! + bs[bs.length - 1][0].length : 0);
+  const hi = Math.min(text.length, end + maxChars);
+  const tail = text.slice(end, hi);
+  const tm = tail.match(/\.\s/);
+  const sentEnd = end + (tm ? tm.index! : tail.length);
+  return { sentence: text.slice(sentStart, sentEnd), offset: sentStart };
+}
+
+function classifyScope(text: string, start: number, end: number, baseYear: string): string {
+  const { sentence, offset } = extractSentence(text, start, end);
+  const relStart = start - offset;
+  let bestScope: string | null = null, bestPos = -1;
+  for (const scope of Object.keys(SCOPE_KEYWORDS)) {
+    for (const word of SCOPE_KEYWORDS[scope]) {
+      const pos = sentence.lastIndexOf(word, relStart - 1);
+      if (pos < 0) continue;
+      if (scope === "부분" && relStart - (pos + word.length) > 25) continue;
+      if (pos > bestPos) { bestScope = scope; bestPos = pos; }
+    }
+  }
+  if (bestScope) return bestScope;
+  const base = String(baseYear || "").replace(/[^0-9]/g, "");
+  if (base) {
+    const years = [...sentence.matchAll(/(?:19|20)[0-9]{2}/g)].map((m) => m[0]);
+    if (years.length && !years.includes(base)) return "선행";
+    if (years.includes(base)) return "금번";
+  }
+  return "불명";
+}
+
+interface CountItem { name: string; count: number; matched: string; scope: string; evidence: string; index: number; }
+
+function extractReportCounts(body: string, baseYear: string): CountItem[] {
+  const found: CountItem[] = [];
+  const seen = new Set<string>();
+  for (const spec of COUNT_PATTERNS) {
+    const re = new RegExp(spec.src, "g");
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(body))) {
+      const count = toInt(m[spec.s]);
+      if (count == null || count <= 0 || count > 100000) continue;
+      const key = spec.name + "|" + count;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      found.push({
+        name: spec.name, count, matched: m[0].trim(),
+        scope: classifyScope(body, m.index, m.index + m[0].length, baseYear),
+        evidence: snippet(body, m.index, m.index + m[0].length), index: m.index,
+      });
+    }
+  }
+  return found;
+}
+
+// ---------------------------------------------------------------------------
+// 검사 1: 금번조사 종수 내부 모순
+// ---------------------------------------------------------------------------
+function checkSpeciesCountConsistency(body: string, baseYear: string): DiscrepancyItem[] {
+  const out: DiscrepancyItem[] = [];
+  const counts = extractReportCounts(body, baseYear);
+  const comparable = counts.filter((c) => c.scope === "금번" || c.scope === "불명");
+  const distinct = [...new Set(comparable.map((c) => c.count))];
+  if (distinct.length > 1) {
+    const a = comparable.find((c) => c.count === distinct[0])!;
+    const b = comparable.find((c) => c.count === distinct[distinct.length - 1])!;
+    out.push({
+      id: rid("ins-scnt"),
+      category: "INTERNAL_CONSISTENCY",
+      severity: "CRITICAL",
+      section: "종 다양성 현황 (Results)",
+      title: `[불일치 의심] 금번조사 종수 표현 상호 불일치 (${distinct.join("종 ≠ ")}종)`,
+      description:
+        `보고서 본문에서 금번(당해) 조사 종수가 서로 다르게 기재되어 있습니다: ` +
+        `${comparable.map((c) => `${c.matched}(${c.count}종)`).join(", ")}. ` +
+        `선행조사·종합(금번+선행) 수치는 비교에서 제외하고 금번조사 수치만 대조하였습니다.`,
+      isSuspectedInconsistency: true,
+      inconsistencyType: "SPECIES_COUNT",
+      conflictingPassages: {
+        locationA: `본문 (${a.name})`, textA: a.evidence,
+        locationB: `본문 (${b.name})`, textB: b.evidence,
+      },
+      suggestedFix: "본문 요약·결과 표·고찰의 '금번조사' 종수를 동일한 수치로 통일하십시오.",
+    });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// 검사 2: 목(Order)별 과·종수 합계 검증
+// ---------------------------------------------------------------------------
+function parseOrders(body: string): Record<string, { family: number; species: number; evidence: string }> {
+  const found: Record<string, { family: number; species: number; evidence: string }> = {};
+  const add = (disp: string, f: string, s: string, i: number, len: number) => {
+    const k = normSpace(disp);
+    if (!k || found[k]) return;
+    const F = toInt(f), S = toInt(s);
+    if (F == null || S == null) return;
+    found[k] = { family: F, species: S, evidence: snippet(body, i, i + len) };
+  };
+  let m: RegExpExecArray | null;
+  const sh = new RegExp(ORDER_SHARED, "g");
+  while ((m = sh.exec(body))) { add(m[1], m[3], m[4], m.index, m[0].length); add(m[2], m[3], m[4], m.index, m[0].length); }
+  const si = new RegExp(ORDER_SINGLE, "g");
+  while ((m = si.exec(body))) { add(m[1], m[2], m[3], m.index, m[0].length); }
+  return found;
+}
+
+function checkOrderArithmetic(body: string): DiscrepancyItem[] {
+  const out: DiscrepancyItem[] = [];
+  const orders = parseOrders(body);
+  const keys = Object.keys(orders);
+  const t = body.match(TOTAL_RE);
+  if (!t || keys.length < 2) return out;
+
+  const totalOrders = toInt(t[1])!, totalFamily = toInt(t[2])!, totalSpecies = toInt(t[3])!;
+  const sumFamily = keys.reduce((a, k) => a + orders[k].family, 0);
+  const sumSpecies = keys.reduce((a, k) => a + orders[k].species, 0);
+  const totalEvidence = snippet(body, body.indexOf(t[0]), body.indexOf(t[0]) + t[0].length);
+
+  if (sumSpecies !== totalSpecies) {
+    out.push({
+      id: rid("ins-osum"),
+      category: "STATISTICS",
+      severity: "CRITICAL",
+      section: "목별 다양성 구성",
+      title: `[불일치 의심] 목별 종수 합계(${sumSpecies}종)와 총계(${totalSpecies}종) 불일치`,
+      description:
+        `목(Order)별로 기재된 종수의 합(${sumSpecies}종)이 보고서 총계(${totalSpecies}종)와 일치하지 않습니다. ` +
+        `목별 수치(${keys.map((k) => `${k} ${orders[k].species}종`).join(", ")}) 또는 총계에 오기가 있는지 확인이 필요합니다.`,
+      isSuspectedInconsistency: true,
+      inconsistencyType: "DOMAIN_METRICS",
+      conflictingPassages: {
+        locationA: "목별 다양성 서술/표", textA: `목별 종수 합 = ${sumSpecies}종`,
+        locationB: "총 종수(총괄)", textB: totalEvidence,
+      },
+      suggestedFix: "목별 구성비표의 종수와 총 종수(총괄표)를 재확인하여 합계를 일치시키십시오.",
+    });
+  }
+  if (sumFamily !== totalFamily) {
+    out.push({
+      id: rid("ins-ofam"),
+      category: "STATISTICS",
+      severity: "WARNING",
+      section: "목별 다양성 구성",
+      title: `[불일치 의심] 목별 과수 합계(${sumFamily}과)와 총계(${totalFamily}과) 불일치`,
+      description:
+        `목별로 기재된 과수의 합(${sumFamily}과)이 보고서 총계(${totalFamily}과)와 다릅니다. ` +
+        `목별 과수 또는 총 과수 표기를 확인하십시오.`,
+      isSuspectedInconsistency: true,
+      inconsistencyType: "DOMAIN_METRICS",
+      suggestedFix: "목별 과수와 총 과수(총괄표)를 재확인하여 일치시키십시오.",
+    });
+  }
+  if (keys.length !== totalOrders) {
+    out.push({
+      id: rid("ins-onum"),
+      category: "STATISTICS",
+      severity: "WARNING",
+      section: "목별 다양성 구성",
+      title: `[검토] 서술된 목 수(${keys.length}개)와 총 목 수(${totalOrders}목) 불일치`,
+      description:
+        `본문에 과·종수가 기재된 목은 ${keys.length}개(${keys.join(", ")})인데 총계는 ${totalOrders}목입니다. ` +
+        `목록 표에는 있으나 본문 서술에서 누락된 목이 있는지 확인하십시오.`,
+      isSuspectedInconsistency: true,
+      inconsistencyType: "DOMAIN_METRICS",
+      suggestedFix: "목별 구성비 서술에 누락된 목이 없는지 확인하십시오.",
+    });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// 공개: 곤충 정합성 통합 검사
+// ---------------------------------------------------------------------------
+export function runInsectConsistencyChecks(rawText: string, surveyYear?: string): DiscrepancyItem[] {
+  try {
+    const body = bodyText(rawText.replace(/\r/g, ""));
+    if (!body || body.length < 20) return [];
+    const baseYear = surveyYear || "";
+    return [
+      ...checkSpeciesCountConsistency(body, baseYear),
+      ...checkOrderArithmetic(body),
+    ];
+  } catch (e) {
+    // 검수 도구 자체 오류가 전체 분석을 막지 않도록 방어
+    return [];
+  }
+}
