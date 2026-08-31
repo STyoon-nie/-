@@ -27,7 +27,9 @@ export default function App() {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [auditHistory, setAuditHistory] = useState<AuditHistoryRecord[]>(() => {
     try {
-      const saved = localStorage.getItem("nie_eco_audit_history");
+      // 이전 버전에 심어졌던 예시(가짜) 감사 이력을 제거하기 위해 저장 키를 v2로 올린다.
+      localStorage.removeItem("nie_eco_audit_history");
+      const saved = localStorage.getItem("nie_eco_audit_history_v2");
       if (saved) {
         return JSON.parse(saved);
       }
@@ -37,10 +39,10 @@ export default function App() {
     return INITIAL_AUDIT_HISTORY;
   });
 
-  // Save audit history to local persistence
+  // Save audit history to local persistence (이 브라우저 세션 검수 결과만 저장)
   useEffect(() => {
     try {
-      localStorage.setItem("nie_eco_audit_history", JSON.stringify(auditHistory));
+      localStorage.setItem("nie_eco_audit_history_v2", JSON.stringify(auditHistory));
     } catch {
       // ignore
     }
