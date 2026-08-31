@@ -1,6 +1,6 @@
 import { ECOLOGICAL_FIELDS } from "../data/fieldsData";
 import { KOREAN_SPECIES_DATABASE, KnownSpecies } from "../data/speciesDatabase";
-import { runInsectConsistencyChecks } from "./insectConsistencyEngine";
+import { runFieldConsistencyChecks } from "./insectConsistencyEngine";
 import {
   DiscrepancyItem,
   FieldCategory,
@@ -1653,13 +1653,12 @@ export function analyzeEcologicalReport(
   const yearMatch = normalizedText.match(/202[0-9]년?/);
   if (yearMatch) surveyYear = yearMatch[0].includes("년") ? yearMatch[0] : `${yearMatch[0]}년`;
 
-  // [EcoCheck] 육상곤충 내부 정합성 검수:
-  //  - 종수 표현의 조사범위 판정(금번/선행/종합) → 금번+선행 종합수치를 종목록과
-  //    잘못 비교하는 오탐을 막고, 금번조사 종수끼리의 실제 모순만 탐지
-  //  - 목(Order)별 과·종수 합계가 총계(N목 M과 K종)와 맞는지 검증
-  if (fieldId === "insects") {
-    discrepancies.push(...runInsectConsistencyChecks(normalizedText, surveyYear));
-  }
+  // [EcoCheck] 분야별 내부 정합성 검수(디스패처가 분야에 따라 규칙 적용):
+  //  - 공통: 종수 조사범위(금번/선행/종합) 판정 → 종합수치 오탐 방지 + 종수 내부 모순,
+  //    편집 잔존 문구, 표·그림 번호, 학명 표기
+  //  - 육상곤충: 목(Order)별 과·종수 합계 검증
+  //  - 담수어류: 과(Family)별 종수 합계 검증
+  discrepancies.push(...runFieldConsistencyChecks(normalizedText, fieldId, surveyYear));
 
   // Extract Geomorphology and Vegetation domain specific records
   let geomorphologyElements: GeomorphologyElementRecord[] | undefined;

@@ -366,22 +366,112 @@ function checkScientificNameFormat(body: string): DiscrepancyItem[] {
 }
 
 // ---------------------------------------------------------------------------
-// 공개: 곤충 정합성·품질 통합 검사
+// 검사 6: 과(Family)별 종수 합계 검증 — 담수어류 등 (과별 종수 + 총계 구조)
 // ---------------------------------------------------------------------------
-export function runInsectConsistencyChecks(rawText: string, surveyYear?: string): DiscrepancyItem[] {
+// '결과·학과·조사과' 등 과로 끝나지만 분류군이 아닌 단어 제외.
+// (2음절 단어 '결과·성과·통과' 등은 정규식 {2,10}으로 이미 제외됨)
+const FAMILY_BLOCKLIST = new Set([
+  "생물자원과", "야생동물과", "자연환경과", "환경정책과", "조사과", "연구과",
+  "기획과", "총무과", "관리과", "보전과", "분류과", "행정과",
+]);
+
+function parseFamilies(body: string): Record<string, { species: number; evidence: string }> {
+  const re = /([가-힣]{2,10}과)\s*([0-9][0-9,]*)\s*종/g;
+  const found: Record<string, { species: number; evidence: string }> = {};
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(body))) {
+    const fam = m[1];
+    if (FAMILY_BLOCKLIST.has(fam)) continue;
+    const sp = toInt(m[2]);
+    if (sp == null) continue;
+    if (!(fam in found)) found[fam] = { species: sp, evidence: snippet(body, m.index, m.index + m[0].length) };
+  }
+  return found;
+}
+
+function checkFamilyArithmetic(body: string): DiscrepancyItem[] {
+  const out: DiscrepancyItem[] = [];
+  const fams = parseFamilies(body);
+  const keys = Object.keys(fams);
+  const t = body.match(/([0-9]+)\s*과\s*([0-9][0-9,]*)\s*종/);
+  if (!t || keys.length < 2) return out;
+
+  const totalFam = toInt(t[1])!, totalSp = toInt(t[2])!;
+  const sumSp = keys.reduce((a, k) => a + fams[k].species, 0);
+  const totalEvidence = snippet(body, body.indexOf(t[0]), body.indexOf(t[0]) + t[0].length);
+
+  if (sumSp !== totalSp) {
+    out.push({
+      id: rid("fish-fsum"),
+      category: "STATISTICS",
+      severity: "CRITICAL",
+      section: "과별 종 구성",
+      title: `[불일치 의심] 과별 종수 합계(${sumSp}종)와 총계(${totalSp}종) 불일치`,
+      description:
+        `과(Family)별로 기재된 종수의 합(${sumSp}종)이 보고서 총계(${totalSp}종)와 일치하지 않습니다. ` +
+        `과별 수치(${keys.map((k) => `${k} ${fams[k].species}종`).join(", ")}) 또는 총계에 오기가 있는지 확인이 필요합니다.`,
+      isSuspectedInconsistency: true,
+      inconsistencyType: "DOMAIN_METRICS",
+      conflictingPassages: {
+        locationA: "과별 종 구성 서술/표", textA: `과별 종수 합 = ${sumSp}종`,
+        locationB: "총 종수(총괄)", textB: totalEvidence,
+      },
+      suggestedFix: "과별 종 구성표의 종수와 총 종수(총괄표)를 재확인하여 합계를 일치시키십시오.",
+    });
+  }
+  if (keys.length !== totalFam) {
+    out.push({
+      id: rid("fish-fnum"),
+      category: "STATISTICS",
+      severity: "WARNING",
+      section: "과별 종 구성",
+      title: `[검토] 서술된 과 수(${keys.length}개)와 총 과 수(${totalFam}과) 불일치`,
+      description:
+        `본문에 종수가 기재된 과는 ${keys.length}개(${keys.join(", ")})인데 총계는 ${totalFam}과입니다. ` +
+        `목록 표에는 있으나 본문 서술에서 누락된 과가 있는지 확인하십시오.`,
+      isSuspectedInconsistency: true,
+      inconsistencyType: "DOMAIN_METRICS",
+      suggestedFix: "과별 구성 서술에 누락된 과가 없는지 확인하십시오.",
+    });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// 공개: 분야별 내부 정합성·품질 통합 검사 (분야에 따라 적용 규칙 분기)
+// ---------------------------------------------------------------------------
+export function runFieldConsistencyChecks(
+  rawText: string,
+  fieldId: string,
+  surveyYear?: string
+): DiscrepancyItem[] {
   try {
     const body = bodyText(rawText.replace(/\r/g, ""));
     if (!body || body.length < 20) return [];
     const baseYear = surveyYear || "";
-    return [
+
+    // 모든 분야 공통: 종수 조사범위(금번/선행/종합) 판정 + 완성도/표기 품질
+    const common: DiscrepancyItem[] = [
       ...checkSpeciesCountConsistency(body, baseYear),
-      ...checkOrderArithmetic(body),
       ...checkResidualKeywords(body),
       ...checkFigureTableNumbers(body),
       ...checkScientificNameFormat(body),
     ];
+
+    if (fieldId === "insects") {
+      return [...checkOrderArithmetic(body), ...common];
+    }
+    if (fieldId === "fish") {
+      return [...checkFamilyArithmetic(body), ...common];
+    }
+    return [];
   } catch (e) {
     // 검수 도구 자체 오류가 전체 분석을 막지 않도록 방어
     return [];
   }
+}
+
+// 하위 호환: 기존 곤충 전용 진입점 유지
+export function runInsectConsistencyChecks(rawText: string, surveyYear?: string): DiscrepancyItem[] {
+  return runFieldConsistencyChecks(rawText, "insects", surveyYear);
 }
